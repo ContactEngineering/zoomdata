@@ -1,4 +1,18 @@
 {
+  "name": "zoomdata",
+  "description": "Zoomable data maps",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "webpack --mode development --devtool inline-source-map --watch",
+    "build-dev": "webpack --mode development",
+    "build-prod": "webpack --mode production"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
     "netcdfjs": "^3.0.0"
   }
