@@ -14,6 +14,14 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@bokeh/bokehjs": "^3.2.2",
+    "@bokeh/numbro": "^1.6.2",
+    "axios": "^1.5.0",
+    "bokehjs": "^1.4.0",
     "netcdfjs": "^3.0.0"
+  },
+  "devDependencies": {
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
   }
 }
