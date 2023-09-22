@@ -1,5 +1,5 @@
 //import {Palettes} from '@bokeh/bokehjs';
-import * as Bokeh from 'bokehjs'; 
+import * as Bokeh from '@bokeh/bokehjs'; 
 import axios from 'axios';
 import { NetCDFReader } from 'netcdfjs';
 
