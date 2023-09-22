@@ -16,9 +16,14 @@
   "dependencies": {
     "@bokeh/bokehjs": "^3.2.2",
     "@bokeh/numbro": "^1.6.2",
+    "@bokeh/slickgrid": "^2.4.4102",
     "axios": "^1.5.0",
     "bokehjs": "^1.4.0",
-    "netcdfjs": "^3.0.0"
+    "choices.js": "^10.2.0",
+    "flatpickr": "^4.6.13",
+    "mathjax-full": "^3.2.2",
+    "netcdfjs": "^3.0.0",
+    "regl": "^2.1.0"
   },
   "devDependencies": {
     "webpack": "^5.88.2",
