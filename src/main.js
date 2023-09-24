@@ -1,12 +1,11 @@
 import {Palettes} from '@bokeh/bokehjs';
-import * as Bokeh from 'bokehjs'; 
 import { version } from '@bokeh/bokehjs';
 import axios from 'axios';
 import { NetCDFReader } from 'netcdfjs';
 
 
 // URL of the NetCDF file
-    const netcdfUrl = 'http://localhost:8000/test/example_files/synthetic_square/dzdata_files/9/0_0.nc';
+    const netcdfUrl = 'http://localhost:8000/test/example_files/synthetic_square/dzdata_files/7/0_0.nc';
 
     // Make a GET request using Axios
     axios.get(netcdfUrl, { responseType: 'arraybuffer' })
@@ -22,7 +21,6 @@ import { NetCDFReader } from 'netcdfjs';
             //  console.log(i)
             
             console.log(Palettes.viridis(20));
-            console.log(Bokeh.version);
           	console.log(heights);
 
             const canvas = document.getElementById("myCanvas");
@@ -61,8 +59,7 @@ import { NetCDFReader } from 'netcdfjs';
             //}
 
             // Bokeh color map
-            const colorPalette = Palettes.inferno(20); // Choose the appropriate palette size, e.g., 256
-
+            const colorPalette = Palettes.inferno(20); 
             // Defining a color scale function
             const minValue = Math.min(...heights);
             const maxValue = Math.max(...heights);
@@ -81,9 +78,11 @@ import { NetCDFReader } from 'netcdfjs';
                 const colorIndex = Math.floor(scaledValue * (colorPalette.length - 1));
                 const color = colorPalette[colorIndex];
 
-                console.log(`x: ${x}, y: ${y}, value: ${value}, scaledValue: ${scaledValue}, color: ${color}`);
+                //console.log(`x: ${x}, y: ${y}, value: ${value}, scaledValue: ${scaledValue}, color: ${color}`);
                 
-                ctx.fillStyle = color;
+                //ctx.fillStyle = color;
+                ctx.fillStyle = '#'+(color.toString(16).substring(0, 6));
+
                 ctx.fillRect(x, y, 1, 1);
               }
             }
