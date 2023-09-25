@@ -58,18 +58,14 @@ import { NetCDFReader } from 'netcdfjs';
             //  }
             //}
 
+
             // Bokeh color map
             const colorPalette = Palettes.inferno(20); 
             // Defining a color scale function
             const minValue = Math.min(...heights);
             const maxValue = Math.max(...heights);
 
-            console.log(`minValue: ${minValue}, maxValue: ${maxValue}`);
-
-            //let scaledValue;
-
-            console.log(c_height);
-            console.log(c_width);
+            const imageData = ctx.createImageData(xSize, ySize);
 
             for (let y = 0; y < ySize; y++) {
               for (let x = 0; x < xSize; x++) {
@@ -78,25 +74,20 @@ import { NetCDFReader } from 'netcdfjs';
                 const colorIndex = Math.floor(scaledValue * (colorPalette.length - 1));
                 const color = colorPalette[colorIndex];
 
-                //console.log(`x: ${x}, y: ${y}, value: ${value}, scaledValue: ${scaledValue}, color: ${color}`);
-                
-                //ctx.fillStyle = color;
-                ctx.fillStyle = '#'+(color.toString(16).substring(0, 6));
 
-                ctx.fillRect(x, y, 1, 1);
+                const htmlColor = `rgba(${color[0]}, ${color[1]}, ${color[2]}, 1)`;
+                
+                // Calculate the pixel index in the ImageData data array
+                const pixelIndex = (y * xSize + x) * 4; // RGBA format
+
+                // Set the RGBA values in the ImageData
+                imageData.data[pixelIndex] = color[0];     // Red
+                imageData.data[pixelIndex + 1] = color[1]; // Green
+                imageData.data[pixelIndex + 2] = color[2]; // Blue
+                imageData.data[pixelIndex + 3] = 255;      // Alpha (fully opaque)
               }
             }
-      });
 
-
-
-
-
-
-
-// http://www.unidata.ucar.edu/software/netcdf/examples/files.html
-//let reader = new FileReader();
-//const data = reader.readAsArrayBuffer("http://localhost:8000/test/example_files/synthetic_square/dzdata_files/0/0_0.nc");
-
-//var netcdfReader = new NetCDFReader(data); // read the header
-//netcdfReader.getDataVariable("wmoId"); // go to offset and read it
+            // Draw the ImageData onto the canvas
+            ctx.putImageData(imageData, 0, 0);
+          });
