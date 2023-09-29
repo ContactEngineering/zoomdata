@@ -19,7 +19,18 @@
     "flatpickr": "^4.6.13",
     "mathjax-full": "^3.2.2",
     "netcdfjs": "^3.0.0",
-    "regl": "^2.1.0"
+    "regl": "^2.1.0",
+    "proj4": "^2.7.0",
+    "@bokeh/numbro": "^1.6.2",
+    "@bokeh/slickgrid": "^2.4.4102",
+    "datepicker": "^0.0.0",
+    "flatbush": "^4.2.0",
+    "hammerjs": "^2.0.8",
+    "nouislider": "^15.7.1",
+    "sprintf-js": "^1.1.3",
+    "timezone": "^1.0.23",
+    "underscore.template": "^0.1.7",
+    "axios": "^1.5.0"
   },
   "devDependencies": {
     "webpack": "^5.88.2",
