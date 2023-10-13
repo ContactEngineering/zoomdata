@@ -39,6 +39,7 @@ function updateVisualization(Z) {
   const cx = canvas.width; // 
   const cy = canvas.height; //
 
+
   // Define the number of rows and columns for the matrix
   const numRows = 4;
   const numCols = 4;
@@ -96,7 +97,7 @@ function updateVisualization(Z) {
                 ctx.fillRect(cellX, cellY, cellWidth / xSize, cellHeight / ySize);
           }
         }
-
+        ctx.clearRect(0, 0, cx, cy);
 
         // Set the flag to true to indicate that at least one file was successfully loaded
         atLeastOneFileLoaded = true;
@@ -133,7 +134,7 @@ window.addEventListener('wheel', (event) => {
       Z++;
     }
   }
-
+  
   updateVisualization(Z);
 });
 
