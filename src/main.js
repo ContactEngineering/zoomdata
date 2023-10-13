@@ -39,12 +39,12 @@ function updateVisualization(Z) {
   const cx = canvas.width; // 
   const cy = canvas.height; //
 
-    // Define the number of rows and columns for the matrix
+  // Define the number of rows and columns for the matrix
   const numRows = 4;
   const numCols = 4;
 
   // Create a variable to keep track of whether at least one file was successfully loaded
-  let atLeastOneFileLoaded = false;
+  let atLeastOneFileLoaded = false;   //doubt
 
   // Loop through each NetCDF file URL
     // Loop through each NetCDF file URL
@@ -70,7 +70,7 @@ function updateVisualization(Z) {
         const colorPalette = Palettes.inferno(20);
 
         const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, cx, cy);
+        //ctx.clearRect(0, 0, cx, cy);
 
 
 
@@ -107,12 +107,12 @@ function updateVisualization(Z) {
       });
   });
 
-  // Check if at least one file was successfully loaded before rendering
+  // Check if at least one file was successfully loaded before rendering (not working properly)
   if (atLeastOneFileLoaded) {
     // Render the canvas or perform any additional actions
     console.log('Successfully loaded');
   } else {
-    // Handle the case where no files were successfully loaded (e.g., display a message)
+    // Handle the case where no files were successfully loaded (not working properly)
     console.log('No files were successfully loaded');
   }
 
