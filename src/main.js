@@ -4,7 +4,7 @@ import axios from 'axios';
 import { NetCDFReader } from 'netcdfjs';
 
 // Define the magnification level (Z)
-let Z = 9; // 
+let Z = 10; // 
 
 // Initial visualization
  updateVisualization(Z);
@@ -81,23 +81,47 @@ function updateVisualization(Z) {
         const ySize = yDim.size;
         const xSize = xDim.size;
 
-         for (let y = 0; y < ySize; y++) {
-              for (let x = 0; x < xSize; x++) {
-                const value = heights[y * xSize + x];
-                const scaledValue = (value - minValue) / (maxValue - minValue);
-                const colorIndex = Math.floor(scaledValue * (colorPalette.length - 1));
-                const color = colorPalette[colorIndex];
+        const overlapSize = 5;
+        const numFiles = fileNames.length;
+
+          // Identify the overlapping region
+        const overlapStart = index === 0 ? 0 : overlapSize;
+        const overlapEnd = index === numFiles - 1 ? heights.length : heights.length - overlapSize;
 
 
-                const cellX = xPos + (x * cellWidth) / xSize;
-                const cellY = yPos + (y * cellHeight) / ySize;
-                const cellColor = '#' + (color.toString(16).substring(0, 6));
+        for (let y = 0; y < ySize; y++) {
+                for (let x = 0; x < xSize; x++) {
+                  // Initialize the color variable
+                  let color;
 
-                ctx.fillStyle = cellColor;
-                ctx.fillRect(cellX, cellY, cellWidth / xSize, cellHeight / ySize);
+          // Check if the current pixel is within the overlapping region
+          if (x >= overlapStart && x < overlapEnd) {
+            // Apply blending or smoothing in the overlapping region
+            const prevFileValue = heights[y * xSize + x - overlapSize];
+            const nextFileValue = heights[y * xSize + x + overlapSize];
+
+            // Calculate a weighted combination to blend the values smoothly
+            const blendFactor = (x - overlapStart) / (2 * overlapSize);
+            const blendedValue = (1 - blendFactor) * prevFileValue + blendFactor * nextFileValue;
+            const blendedValueScaled = (blendedValue - minValue) / (maxValue - minValue);
+            const colorIndex = Math.floor(blendedValueScaled * (colorPalette.length - 1));
+            color = colorPalette[colorIndex];
+          } else {
+            // Use the original value for non-overlapping regions
+            const value = heights[y * xSize + x];
+            const scaledValue = (value - minValue) / (maxValue - minValue);
+            const colorIndex = Math.floor(scaledValue * (colorPalette.length - 1));
+            color = colorPalette[colorIndex];
           }
+
+          const cellX = xPos + (x * cellWidth) / xSize;
+          const cellY = yPos + (y * cellHeight) / ySize;
+          const cellColor = '#' + (color.toString(16).substring(0, 6));
+
+          ctx.fillStyle = cellColor;
+          ctx.fillRect(cellX, cellY, cellWidth / xSize, cellHeight / ySize);
         }
-        ctx.clearRect(0, 0, cx, cy);
+      }
 
         // Set the flag to true to indicate that at least one file was successfully loaded
         atLeastOneFileLoaded = true;
@@ -134,7 +158,13 @@ window.addEventListener('wheel', (event) => {
       Z++;
     }
   }
-  
+   const canvas = document.getElementById('myCanvas');
+  const ctx = canvas.getContext('2d');
+  const cx = canvas.width;
+  const cy = canvas.height;
+
+  // Clear the canvas before updating for the new Z value
+  ctx.clearRect(0, 0, cx, cy);
   updateVisualization(Z);
 });
 
