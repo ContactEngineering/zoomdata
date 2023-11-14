@@ -3,9 +3,32 @@
    <head>
      <meta charset="utf-8" />
      <title>Getting Started</title>
+     <style>
+      #myCanvas {
+        display: inline-block;
+      }
+
+      #scaleBar, #colorBar {
+        display: inline-block;
+        margin-left: 20px;
+      }
+
+      #colorBarGradient {
+        height: 40px;
+        width: 150px;
+        background: linear-gradient(to right, #000000, #ff0000);
+        border: 1px solid #000;
+      }
+     </style>
    </head>
    <body>
     <canvas id="myCanvas" width="800" height="600"></canvas>
+    <div id="scaleBar">Scale: <span id="scaleValue"></span></div>
+    <div id="colorBar">
+      Color Bar
+      <div id="colorBarGradient"></div>
+    </div>
+
     <script src="dist/main.js"></script>
    </body>
  </html>
