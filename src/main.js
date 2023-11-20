@@ -4,7 +4,7 @@ import axios from 'axios';
 import { NetCDFReader } from 'netcdfjs';
 
 // Define the magnification level (Z)
-let Z = 9; // 
+let Z = 9.8; // 
 
 // Initial visualization
  updateVisualization(Z);
@@ -44,15 +44,22 @@ function updateVisualization(Z) {
 
     // Compute effective data file size at current zoom level
     const maxZoomLevel = Math.ceil(Math.log2(Math.max(imageSize.Width, imageSize.Height)));
-    const zoomLevelFactor = (2 ** (maxZoomLevel - Z + 1));
+
+    const zoomLevelFactor = (2 ** (maxZoomLevel - Z + 2));
+
     const widthAtZoomLevel = imageSize.Width / zoomLevelFactor;
     const heightAtZoomLevel = imageSize.Height / zoomLevelFactor;
-    console.log(`width = ${widthAtZoomLevel}, height = ${heightAtZoomLevel}`);
 
     // Compute number of tiles at current zoom level
-    const numColumns = Math.ceil(widthAtZoomLevel / tileSize);
-    const numRows = Math.ceil(heightAtZoomLevel / tileSize);
+    const numColumns = (widthAtZoomLevel / tileSize);
+    const numRows = (heightAtZoomLevel / tileSize);
 
+    console.log(`width = ${widthAtZoomLevel}, height = ${heightAtZoomLevel}, maxZoomLevel = ${maxZoomLevel}, zoomLevelFactor = ${zoomLevelFactor}, numColumns = ${numColumns}, numRows = ${numRows}`);
+
+
+    console.log('Look below');
+    console.log(2 ** (Math.floor(Math.log2(numColumns))));
+    console.log(2 ** (Math.floor(Math.log2(numRows))));
     updateScaleBar(Z);
     //renderColorBar();
 
@@ -63,6 +70,10 @@ function updateVisualization(Z) {
     const cx = canvas.width; // 
     const cy = canvas.height; //
 
+    const ctx = canvas.getContext('2d');
+
+    //ctx.clearRect(0, 0, cx, cy);
+
     // Create a variable to keep track of whether at least one file was successfully loaded
     let atLeastOneFileLoaded = false;   //doubt
 
@@ -72,16 +83,21 @@ function updateVisualization(Z) {
 
     const colorPalette = Palettes.inferno(20);
 
-    for (let rowIndex = 0; rowIndex < numRows; rowIndex++) {
-      for (let columnIndex = 0; columnIndex < numColumns; columnIndex++) {
+    for (let rowIndex = 0; rowIndex < Math.max(1, 2 ** (Math.floor(Math.log2(numRows)))); rowIndex++) {
+      for (let columnIndex = 0; columnIndex < Math.max(1, 2 ** (Math.floor(Math.log2(numColumns)))); columnIndex++) {
         const fileName = `${rowIndex}_${columnIndex}.nc`;
-        const netcdfUrl = `${baseUrl}${Z}/${fileName}`;
+        const netcdfUrl = `${baseUrl}${Math.floor(Z)}/${fileName}`;
+
+        console.log(`Trying to load tile at Z=${Z}, row=${rowIndex}, column=${columnIndex}`);
+
 
         // Calculate the position for rendering in the canvas
-        const xPos = columnIndex * (cx / numColumns);
-        const yPos = rowIndex * (cy / numRows);
-        const cellWidth = cx / numColumns;
-        const cellHeight = cy / numRows;
+        const xPos = columnIndex * (cx / Math.max(1,(Math.log2(numColumns))));
+        console.log(xPos, columnIndex, numColumns);
+        const yPos = rowIndex * (cy / Math.max(1,(Math.log2(numRows))));
+        const cellWidth = cx / Math.max(1,(Math.log2(numColumns)));
+        const cellHeight = cy / Math.max(1,(Math.log2(numRows)));
+        //console.log(xPos,yPos, cellWidth, cellHeight);
         axios.get(netcdfUrl, { responseType: 'arraybuffer' })
           .then((response) => response.data)
           .then((data) => {
@@ -89,7 +105,6 @@ function updateVisualization(Z) {
             const heights = netcdfReader.getDataVariable('heights');
 
             const ctx = canvas.getContext('2d');
-            //ctx.clearRect(0, 0, cx, cy);
 
             const dimensions = netcdfReader.dimensions;
             const xDim = dimensions.find((dim) => dim.name === 'y');
@@ -114,8 +129,13 @@ function updateVisualization(Z) {
 
                   ctx.fillStyle = cellColor;
                   ctx.fillRect(cellX, cellY, cellWidth / xSize, cellHeight / ySize);
+                  //console.log(cellX , cellY , cellWidth, xSize, cellHeight, ySize);
+
+
               }
             }
+
+
 
             // Set the flag to true to indicate that at least one file was successfully loaded
             atLeastOneFileLoaded = true;
@@ -131,7 +151,8 @@ function updateVisualization(Z) {
     if (atLeastOneFileLoaded) {
       // Render the canvas or perform any additional actions
       console.log('Successfully loaded');
-    } else {
+    } 
+    else {
       // Handle the case where no files were successfully loaded (not working properly)
       console.log('No files were successfully loaded');
     }
@@ -146,12 +167,11 @@ window.addEventListener('wheel', (event) => {
   if (event.deltaY > 0) {
     // Zoom out
     if (Z > 0) {
-      Z--;
-    }
+      Z = parseFloat((Z - 0.1).toFixed(2));    }
   } else {
     // Zoom in
     if (Z < 10) { // Adjust the maximum Z value
-      Z++;
+      Z = parseFloat((Z + 0.1).toFixed(2));
     }
   }
    const canvas = document.getElementById('myCanvas');
@@ -160,7 +180,7 @@ window.addEventListener('wheel', (event) => {
   const cy = canvas.height;
 
   // Clear the canvas before updating for the new Z value
-  ctx.clearRect(0, 0, cx, cy);
+  //ctx.clearRect(0, 0, cx, cy);
   updateVisualization(Z);
 });
 
