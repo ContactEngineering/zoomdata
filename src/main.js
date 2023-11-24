@@ -4,15 +4,22 @@ import axios from 'axios';
 import { NetCDFReader } from 'netcdfjs';
 
 // Define the magnification level (Z)
-let Z = 9.8; // 
+let Z = 9.8;
 
-// Initial visualization
- updateVisualization(Z);
 
- function updateScaleBar(Z) {
-    const scaleValueElement = document.getElementById('scaleValue');
-    scaleValueElement.textContent = `Z = ${Z}`;
-  }
+// Define the initial rendering position
+let renderingPosition = { x: 0, y: 0 };
+let isDragging = false;
+let dragOffset = { x: 0, y: 0 }; // Store the initial offset
+
+let numColumns, numRows;
+
+updateVisualization(Z);
+
+function updateScaleBar(Z) {
+  const scaleValueElement = document.getElementById('scaleValue');
+  scaleValueElement.textContent = `Z = ${Z}`;
+}
 
 function renderColorBar(colorPalette) {
   const colorBarGradient = document.getElementById('colorBarGradient');
@@ -25,62 +32,67 @@ function renderColorBar(colorPalette) {
   });
 }
 
+function renderTileToImageData(netcdfReader, minValue, maxValue, colorPalette) {
+  const heights = netcdfReader.getDataVariable('heights');
+  const dimensions = netcdfReader.dimensions;
+  const xDim = dimensions.find((dim) => dim.name === 'y');
+  const yDim = dimensions.find((dim) => dim.name === 'x');
+  const xSize = xDim.size;
+  const ySize = yDim.size;
 
-// Loop through each NetCDF file URL
+  const imageData = new ImageData(xSize, ySize);
+  const data = new Uint32Array(imageData.data.buffer);
+
+  for (let y = 0; y < ySize; y++) {
+    for (let x = 0; x < xSize; x++) {
+      const value = heights[y * xSize + x];
+      const scaledValue = (value - minValue) / (maxValue - minValue);
+      const colorIndex = Math.floor(scaledValue * (colorPalette.length - 1));
+      const color = colorPalette[colorIndex];
+
+      const pixelIndex = (y * xSize + x); // Each pixel has 4 values (R, G, B, A)
+      data[pixelIndex] = color;
+      /*
+      data[pixelIndex] = color >> 16 & 0xFF;     // Red component
+      data[pixelIndex + 1] = color >> 8 & 0xFF;  // Green component
+      data[pixelIndex + 2] = color & 0xFF;       // Blue component
+      data[pixelIndex + 3] = 255;                // Alpha component (fully opaque)
+      */
+    }
+  }
+
+  const tileCanvas = new OffscreenCanvas(xSize, ySize);
+  const tileCtx = tileCanvas.getContext('2d');
+  tileCtx.putImageData(imageData, 0, 0);
+
+  return tileCanvas;
+}
+
 function updateVisualization(Z) {
-
-  // Define the constant part of the URL
   const rootUrl = 'http://localhost:8000/test/example_files/synthetic_square/';
   const baseUrl = `${rootUrl}dzdata_files/`;
 
-  // Read JSON
   axios.get(`${rootUrl}dzdata.json`).then(response => {
-    console.log(response.data);
-    console.log(response.data.Image.Size.Height);
-
-    // Extract data file size from metadata file
     const imageSize = response.data.Image.Size;
     const tileSize = response.data.Image.TileSize;
-
-    // Compute effective data file size at current zoom level
     const maxZoomLevel = Math.ceil(Math.log2(Math.max(imageSize.Width, imageSize.Height)));
-
     const zoomLevelFactor = (2 ** (maxZoomLevel - Z + 2));
-
     const widthAtZoomLevel = imageSize.Width / zoomLevelFactor;
     const heightAtZoomLevel = imageSize.Height / zoomLevelFactor;
-
-    // Compute number of tiles at current zoom level
     const numColumns = (widthAtZoomLevel / tileSize);
     const numRows = (heightAtZoomLevel / tileSize);
 
-    console.log(`width = ${widthAtZoomLevel}, height = ${heightAtZoomLevel}, maxZoomLevel = ${maxZoomLevel}, zoomLevelFactor = ${zoomLevelFactor}, numColumns = ${numColumns}, numRows = ${numRows}`);
+    console.log('numColumns:', numColumns);
+    console.log('numRows:', numRows);
 
-
-    console.log('Look below');
-    console.log(2 ** (Math.floor(Math.log2(numColumns))));
-    console.log(2 ** (Math.floor(Math.log2(numRows))));
     updateScaleBar(Z);
-    //renderColorBar();
-
-    // Select the canvas element from HTML
     const canvas = document.getElementById('myCanvas');
+    const cx = canvas.width;
+    const cy = canvas.height;
 
-    // Define the canvas size (cx and cy)
-    const cx = canvas.width; // 
-    const cy = canvas.height; //
-
-    const ctx = canvas.getContext('2d');
-
-    //ctx.clearRect(0, 0, cx, cy);
-
-    // Create a variable to keep track of whether at least one file was successfully loaded
-    let atLeastOneFileLoaded = false;   //doubt
-
-    // We need the same color palette for all tiles;
-    const minValue = 0.0; //Math.min(...heights);
-    const maxValue = 1.0; //Math.max(...heights);
-
+    let atLeastOneFileLoaded = false;
+    const minValue = 0.0;
+    const maxValue = 1.0;
     const colorPalette = Palettes.inferno(20);
 
     for (let rowIndex = 0; rowIndex < Math.max(1, 2 ** (Math.floor(Math.log2(numRows)))); rowIndex++) {
@@ -88,100 +100,113 @@ function updateVisualization(Z) {
         const fileName = `${rowIndex}_${columnIndex}.nc`;
         const netcdfUrl = `${baseUrl}${Math.floor(Z)}/${fileName}`;
 
-        console.log(`Trying to load tile at Z=${Z}, row=${rowIndex}, column=${columnIndex}`);
+        const xPos =renderingPosition.x + columnIndex * (cx / Math.max(0.5, (Math.log2(numColumns))));
+        const yPos = renderingPosition.y + rowIndex * (cy / Math.max(0.5, (Math.log2(numRows))));
+        const cellWidth = cx / Math.max(0.5, (Math.log2(numColumns)));
+        const cellHeight = cy / Math.max(0.5, (Math.log2(numRows)));
 
-
-        // Calculate the position for rendering in the canvas
-        const xPos = columnIndex * (cx / Math.max(1,(Math.log2(numColumns))));
-        console.log(xPos, columnIndex, numColumns);
-        const yPos = rowIndex * (cy / Math.max(1,(Math.log2(numRows))));
-        const cellWidth = cx / Math.max(1,(Math.log2(numColumns)));
-        const cellHeight = cy / Math.max(1,(Math.log2(numRows)));
-        //console.log(xPos,yPos, cellWidth, cellHeight);
         axios.get(netcdfUrl, { responseType: 'arraybuffer' })
           .then((response) => response.data)
           .then((data) => {
             const netcdfReader = new NetCDFReader(data);
-            const heights = netcdfReader.getDataVariable('heights');
+            const imageData = renderTileToImageData(netcdfReader, minValue, maxValue, colorPalette);
 
             const ctx = canvas.getContext('2d');
 
-            const dimensions = netcdfReader.dimensions;
-            const xDim = dimensions.find((dim) => dim.name === 'y');
-            const yDim = dimensions.find((dim) => dim.name === 'x');
-            const xSize = xDim.size;
-            const ySize = yDim.size;
+            //ctx.putImageData(imageData, xPos, yPos, 0, 0, cellWidth, cellHeight);
+            ctx.drawImage(imageData, xPos, yPos, cellWidth, cellHeight);
 
-            console.log(xSize);
-            console.log(ySize);
-
-             for (let y = 0; y < ySize; y++) {
-                for (let x = 0; x < xSize; x++) {
-                  const value = heights[y * xSize + x];
-                  const scaledValue = (value - minValue) / (maxValue - minValue);
-                  const colorIndex = Math.floor(scaledValue * (colorPalette.length - 1));
-                  const color = colorPalette[colorIndex];
-
-
-                  const cellX = xPos + (x * cellWidth) / xSize;
-                  const cellY = yPos + (y * cellHeight) / ySize;
-                  const cellColor = '#' + (color.toString(16).substring(0, 6));
-
-                  ctx.fillStyle = cellColor;
-                  ctx.fillRect(cellX, cellY, cellWidth / xSize, cellHeight / ySize);
-                  //console.log(cellX , cellY , cellWidth, xSize, cellHeight, ySize);
-
-
-              }
-            }
-
-
-
-            // Set the flag to true to indicate that at least one file was successfully loaded
             atLeastOneFileLoaded = true;
           })
           .catch((error) => {
             console.error(`Error loading NetCDF file: ${netcdfUrl}`);
             console.error(error);
           });
-        }
       }
+    }
 
-    // Check if at least one file was successfully loaded before rendering (not working properly)
     if (atLeastOneFileLoaded) {
-      // Render the canvas or perform any additional actions
       console.log('Successfully loaded');
-    } 
-    else {
-      // Handle the case where no files were successfully loaded (not working properly)
+    } else {
       console.log('No files were successfully loaded');
     }
 
-    // Display the current Z value in the console
     console.log(`Current Z value: ${Z}`);
   });
 }
 
-// Event listener for mouse scroll to control Z value
+// ...
+
 window.addEventListener('wheel', (event) => {
-  if (event.deltaY > 0) {
-    // Zoom out
-    if (Z > 0) {
-      Z = parseFloat((Z - 0.1).toFixed(2));    }
-  } else {
-    // Zoom in
-    if (Z < 10) { // Adjust the maximum Z value
-      Z = parseFloat((Z + 0.1).toFixed(2));
-    }
-  }
-   const canvas = document.getElementById('myCanvas');
+  const canvas = document.getElementById('myCanvas');
   const ctx = canvas.getContext('2d');
   const cx = canvas.width;
   const cy = canvas.height;
 
-  // Clear the canvas before updating for the new Z value
-  //ctx.clearRect(0, 0, cx, cy);
+  // Calculate the mouse position relative to the canvas
+  //const mouseX = event.clientX - canvas.getBoundingClientRect().left;
+  //const mouseY = event.clientY - canvas.getBoundingClientRect().top;
+
+  // Convert mouse coordinates to data coordinates
+  //const dataX = (mouseX - renderingPosition.x) / (cx / Math.max(0.5, Math.log2(numColumns)));
+  //const dataY = (mouseY - renderingPosition.y) / (cy / Math.max(0.5, Math.log2(numRows)));
+
+  // Calculate the zoom factor
+  //const zoomFactor = Z;
+
+  // Adjust the rendering position based on the zoom factor and the mouse position
+  //renderingPosition.x = mouseX - dataX * (cx / Math.max(0.5, Math.log2(numColumns))) * (zoomFactor - 1);
+  //renderingPosition.y = mouseY - dataY * (cy / Math.max(0.5, Math.log2(numRows))) * (zoomFactor - 1);
+
+  // Update the Z value
+  if (event.deltaY > 0) {
+    if (Z > 0) {
+      Z = parseFloat((Z - 0.1).toFixed(2));
+    }
+  } else {
+    if (Z < 10) {
+      Z = parseFloat((Z + 0.1).toFixed(2));
+    }
+  }
+
+  // Clear the canvas and update the visualization with the new rendering position
+  ctx.clearRect(0, 0, cx, cy);
   updateVisualization(Z);
+});
+
+// ...
+
+
+const canvas = document.getElementById('myCanvas');
+
+canvas.addEventListener('mousedown', (event) => {
+  // Start dragging
+  isDragging = true;
+
+  // Update the drag offset based on the mouse click coordinates
+  dragOffset.x = event.clientX - canvas.getBoundingClientRect().left - renderingPosition.x;
+  dragOffset.y = event.clientY - canvas.getBoundingClientRect().top - renderingPosition.y;
+});
+
+canvas.addEventListener('mousemove', (event) => {
+  if (isDragging) {
+    // Update the rendering position based on mouse move and drag offset
+    renderingPosition.x = event.clientX - canvas.getBoundingClientRect().left - dragOffset.x;
+    renderingPosition.y = event.clientY - canvas.getBoundingClientRect().top - dragOffset.y;
+
+    // Clear the canvas and update the visualization with the new rendering position
+    const ctx = canvas.getContext('2d');
+    const cx = canvas.width;
+    const cy = canvas.height;
+
+    ctx.clearRect(0, 0, cx, cy);
+    updateVisualization(Z);
+  }
+});
+
+canvas.addEventListener('mouseup', () => {
+  // Stop dragging
+  isDragging = false;
 });
 
 renderColorBar(Palettes.inferno(20));
