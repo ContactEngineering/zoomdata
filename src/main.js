@@ -90,6 +90,35 @@ class Tile {
 }
 
 
+/* DeepZoomConfiguration represents the global deep zoom information, such as number of tiles and overlap */
+class DeepZoomConfiguration {
+  imageSize;
+  tileSize;
+  overlap;
+
+  constructor(url) {
+
+  }
+
+  tileSizeAtZoomLevel(zoomLevel) {
+
+  }
+}
+
+
+/* Tiled image is a representation at a specific zoom level. It takes care of
+   cachings tiles and can render to a rendering context. */
+class TiledImage {
+  tileCache;
+
+  constructor(deepZoomConfiguration, zoomLevel) {
+    this.tileCache = {};
+  }
+
+  renderTo(context, xPos, yPos, fractionalZoomLevel) {
+
+  }
+}
 
 
 // Define the magnification level (Z)
