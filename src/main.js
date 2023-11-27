@@ -2,6 +2,8 @@ import axios from 'axios';
 import { Palettes } from '@bokeh/bokehjs';
 import { NetCDFReader } from 'netcdfjs';
 
+/* The ColorMapper class turns a data array into an offscreen canvas element
+   that can be rendered onto a context */
 class ColorMapper {
   colorPalette;
   minValue;
@@ -32,8 +34,7 @@ class ColorMapper {
 
     // Render image to offscreen canvas
     const tileCanvas = new OffscreenCanvas(xSize, ySize);
-    const tileCtx = tileCanvas.getContext('2d');
-    tileCtx.putImageData(imageData, 0, 0);
+    tileCanvas.getContext('2d').putImageData(imageData, 0, 0);
 
     return tileCanvas;
   }
@@ -60,8 +61,8 @@ class Tile {
     this.tileCanvas = null;
   }
 
-  fetch(onSuccess=null) {
-    axios.get(this.url, { responseType: 'arraybuffer' }).then(response => {
+  fetch() {
+    return axios.get(this.url, { responseType: 'arraybuffer' }).then(response => {
       const netcdfReader = new NetCDFReader(response.data);
       const heights = netcdfReader.getDataVariable('heights');
       const dimensions = netcdfReader.dimensions;
@@ -72,18 +73,13 @@ class Tile {
 
       this.tileCanvas = this.colorMapper.render(heights, xSize, ySize);
 
-      if (onSuccess) {
-        onSuccess(this.tileCanvas);
-      }
-    }).catch(error => {
-      console.error(`Error loading NetCDF file: ${this.url}`);
-      console.error(error);
+      return this.tileCanvas;
     });
   }
 
   renderTo(context, xPos, yPos, width, height) {
     if (this.tileCanvas == null) {
-      this.fetch(tileCanvas => {
+      this.fetch().then(tileCanvas => {
         context.drawImage(tileCanvas, xPos, yPos, width, height);
       });
     } else {
@@ -92,6 +88,8 @@ class Tile {
     }
   }
 }
+
+
 
 
 // Define the magnification level (Z)
