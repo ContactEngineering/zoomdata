@@ -14,7 +14,10 @@ let dragOffset = { x: 0, y: 0 }; // Store the initial offset
 
 let numColumns, numRows;
 
-updateVisualization(Z);
+
+let zoomLevelFactor =1;  // Declare zoomLevelFactor outside of function
+
+updateVisualizationWithCache(Z);
 
 function updateScaleBar(Z) {
   const scaleValueElement = document.getElementById('scaleValue');
@@ -31,8 +34,9 @@ function renderColorBar(colorPalette) {
     colorBarGradient.appendChild(colorBlock);
   });
 }
+const imageDataCache = {};
 
-function renderTileToImageData(netcdfReader, minValue, maxValue, colorPalette) {
+function renderTileToImageDataAndCache(netcdfReader, minValue, maxValue, colorPalette, rowIndex, columnIndex) {  
   const heights = netcdfReader.getDataVariable('heights');
   const dimensions = netcdfReader.dimensions;
   const xDim = dimensions.find((dim) => dim.name === 'y');
@@ -65,10 +69,13 @@ function renderTileToImageData(netcdfReader, minValue, maxValue, colorPalette) {
   const tileCtx = tileCanvas.getContext('2d');
   tileCtx.putImageData(imageData, 0, 0);
 
+  // Cache the imageData
+  imageDataCache[`${rowIndex}_${columnIndex}`] = tileCanvas;
+
   return tileCanvas;
 }
 
-function updateVisualization(Z) {
+function updateVisualizationWithCache(Z) {
   const rootUrl = 'http://localhost:8000/test/example_files/synthetic_square/';
   const baseUrl = `${rootUrl}dzdata_files/`;
 
@@ -76,7 +83,8 @@ function updateVisualization(Z) {
     const imageSize = response.data.Image.Size;
     const tileSize = response.data.Image.TileSize;
     const maxZoomLevel = Math.ceil(Math.log2(Math.max(imageSize.Width, imageSize.Height)));
-    const zoomLevelFactor = (2 ** (maxZoomLevel - Z + 2));
+    zoomLevelFactor = (2 ** (maxZoomLevel - Z + 2));
+    console.log("zlf ",zoomLevelFactor);
     const widthAtZoomLevel = imageSize.Width / zoomLevelFactor;
     const heightAtZoomLevel = imageSize.Height / zoomLevelFactor;
     const numColumns = (widthAtZoomLevel / tileSize);
@@ -105,23 +113,37 @@ function updateVisualization(Z) {
         const cellWidth = cx / Math.max(0.5, (Math.log2(numColumns)));
         const cellHeight = cy / Math.max(0.5, (Math.log2(numRows)));
 
-        axios.get(netcdfUrl, { responseType: 'arraybuffer' })
-          .then((response) => response.data)
-          .then((data) => {
-            const netcdfReader = new NetCDFReader(data);
-            const imageData = renderTileToImageData(netcdfReader, minValue, maxValue, colorPalette);
+        if (imageDataCache[`${rowIndex}_${columnIndex}`]) {
+          // If imageData is already cached, use it directly
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(imageDataCache[`${rowIndex}_${columnIndex}`], xPos, yPos, cellWidth, cellHeight);
 
-            const ctx = canvas.getContext('2d');
+          atLeastOneFileLoaded = true;
+        } else {
+          axios
+            .get(netcdfUrl, { responseType: 'arraybuffer' })
+            .then((response) => response.data)
+            .then((data) => {
+              const netcdfReader = new NetCDFReader(data);
+              const imageData = renderTileToImageDataAndCache(
+                netcdfReader,
+                minValue,
+                maxValue,
+                colorPalette,
+                rowIndex,
+                columnIndex
+              );
 
-            //ctx.putImageData(imageData, xPos, yPos, 0, 0, cellWidth, cellHeight);
-            ctx.drawImage(imageData, xPos, yPos, cellWidth, cellHeight);
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(imageData, xPos, yPos, cellWidth, cellHeight);
 
-            atLeastOneFileLoaded = true;
-          })
-          .catch((error) => {
-            console.error(`Error loading NetCDF file: ${netcdfUrl}`);
-            console.error(error);
-          });
+              atLeastOneFileLoaded = true;
+            })
+            .catch((error) => {
+              console.error(`Error loading NetCDF file: ${netcdfUrl}`);
+              console.error(error);
+            });
+        }
       }
     }
 
@@ -143,20 +165,16 @@ window.addEventListener('wheel', (event) => {
   const cx = canvas.width;
   const cy = canvas.height;
 
-  // Calculate the mouse position relative to the canvas
-  //const mouseX = event.clientX - canvas.getBoundingClientRect().left;
-  //const mouseY = event.clientY - canvas.getBoundingClientRect().top;
 
-  // Convert mouse coordinates to data coordinates
-  //const dataX = (mouseX - renderingPosition.x) / (cx / Math.max(0.5, Math.log2(numColumns)));
-  //const dataY = (mouseY - renderingPosition.y) / (cy / Math.max(0.5, Math.log2(numRows)));
+  // Store the current mouse position in canvas coordinates
+  const MCx = event.clientX - canvas.getBoundingClientRect().left;
+  const MCy = event.clientY - canvas.getBoundingClientRect().top;
 
-  // Calculate the zoom factor
-  //const zoomFactor = Z;
+  // Calculate the change in mouse position in data coordinates
+  const MDx = (MCx - renderingPosition.x) *(zoomLevelFactor);
+  const MDy = (MCy - renderingPosition.y) *(zoomLevelFactor);
 
-  // Adjust the rendering position based on the zoom factor and the mouse position
-  //renderingPosition.x = mouseX - dataX * (cx / Math.max(0.5, Math.log2(numColumns))) * (zoomFactor - 1);
-  //renderingPosition.y = mouseY - dataY * (cy / Math.max(0.5, Math.log2(numRows))) * (zoomFactor - 1);
+  console.log(MDx,MDy,MCx,MCy,renderingPosition.x,renderingPosition.y,zoomLevelFactor);
 
   // Update the Z value
   if (event.deltaY > 0) {
@@ -169,9 +187,13 @@ window.addEventListener('wheel', (event) => {
     }
   }
 
+  // Update rendering position based on the invariant conditions
+  renderingPosition.x = MCx - (MDx/ zoomLevelFactor);
+  renderingPosition.y = MCy - (MDy/ zoomLevelFactor);
+
   // Clear the canvas and update the visualization with the new rendering position
   ctx.clearRect(0, 0, cx, cy);
-  updateVisualization(Z);
+  updateVisualizationWithCache(Z);
 });
 
 // ...
@@ -200,7 +222,7 @@ canvas.addEventListener('mousemove', (event) => {
     const cy = canvas.height;
 
     ctx.clearRect(0, 0, cx, cy);
-    updateVisualization(Z);
+    updateVisualizationWithCache(Z);
   }
 });
 
