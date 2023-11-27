@@ -1,7 +1,98 @@
-import {Palettes} from '@bokeh/bokehjs';
-import { version } from '@bokeh/bokehjs';
 import axios from 'axios';
+import { Palettes } from '@bokeh/bokehjs';
 import { NetCDFReader } from 'netcdfjs';
+
+class ColorMapper {
+  colorPalette;
+  minValue;
+  maxValue;
+
+  constructor(colorPalette, minValue, maxValue) {
+    this.colorPalette = colorPalette;
+    this.minValue = minValue;
+    this.maxValue = maxValue;
+  }
+
+  render(data, xSize, ySize) {
+    // Create image data buffer and fill it
+    const imageData = new ImageData(xSize, ySize);
+    const imageDataArray = new Uint32Array(imageData.data.buffer);
+
+    for (let y = 0; y < ySize; y++) {
+      for (let x = 0; x < xSize; x++) {
+        const value = data[y * xSize + x];
+        const scaledValue = (value - this.minValue) / (this.maxValue - this.minValue);
+        const colorIndex = Math.floor(scaledValue * (this.colorPalette.length - 1));
+        const color = this.colorPalette[colorIndex];
+
+        const pixelIndex = (y * xSize + x); // Each pixel has 4 values (R, G, B, A)
+        imageDataArray[pixelIndex] = color;
+      }
+    }
+
+    // Render image to offscreen canvas
+    const tileCanvas = new OffscreenCanvas(xSize, ySize);
+    const tileCtx = tileCanvas.getContext('2d');
+    tileCtx.putImageData(imageData, 0, 0);
+
+    return tileCanvas;
+  }
+}
+
+
+// Cache the imageData
+//    tileCache[`${rowIndex}_${columnIndex}`] = tileCanvas;
+// if (tileCache[`${rowIndex}_${columnIndex}`]) {
+//  const ctx = canvas.getContext('2d');
+
+class Tile {
+  colorMapper;
+  url;
+  tileCanvas;
+
+  constructor(colorMapper, url) {
+    this.colorMapper = colorMapper;
+    this.url = url;
+    this.tileCanvas = null;
+  }
+
+  clearCache() {
+    this.tileCanvas = null;
+  }
+
+  fetch(onSuccess=null) {
+    axios.get(this.url, { responseType: 'arraybuffer' }).then(response => {
+      const netcdfReader = new NetCDFReader(response.data);
+      const heights = netcdfReader.getDataVariable('heights');
+      const dimensions = netcdfReader.dimensions;
+      const yDim = dimensions.find((dim) => dim.name === 'x');
+      const xDim = dimensions.find((dim) => dim.name === 'y');
+      const xSize = xDim.size;
+      const ySize = yDim.size;
+
+      this.tileCanvas = this.colorMapper.render(heights, xSize, ySize);
+
+      if (onSuccess) {
+        onSuccess(this.tileCanvas);
+      }
+    }).catch(error => {
+      console.error(`Error loading NetCDF file: ${this.url}`);
+      console.error(error);
+    });
+  }
+
+  renderTo(context, xPos, yPos, width, height) {
+    if (this.tileCanvas == null) {
+      this.fetch(tileCanvas => {
+        context.drawImage(tileCanvas, xPos, yPos, width, height);
+      });
+    } else {
+      // If imageData is already cached, use it directly
+      context.drawImage(this.tileCanvas, xPos, yPos, width, height);     
+    }
+  }
+}
+
 
 // Define the magnification level (Z)
 let Z = 9.8;
@@ -15,7 +106,7 @@ let dragOffset = { x: 0, y: 0 }; // Store the initial offset
 let numColumns, numRows;
 
 
-let zoomLevelFactor =1;  // Declare zoomLevelFactor outside of function
+let zoomLevelFactor = 1;  // Declare zoomLevelFactor outside of function
 
 updateVisualizationWithCache(Z);
 
@@ -34,57 +125,22 @@ function renderColorBar(colorPalette) {
     colorBarGradient.appendChild(colorBlock);
   });
 }
-const imageDataCache = {};
-
-function renderTileToImageDataAndCache(netcdfReader, minValue, maxValue, colorPalette, rowIndex, columnIndex) {  
-  const heights = netcdfReader.getDataVariable('heights');
-  const dimensions = netcdfReader.dimensions;
-  const xDim = dimensions.find((dim) => dim.name === 'y');
-  const yDim = dimensions.find((dim) => dim.name === 'x');
-  const xSize = xDim.size;
-  const ySize = yDim.size;
-
-  const imageData = new ImageData(xSize, ySize);
-  const data = new Uint32Array(imageData.data.buffer);
-
-  for (let y = 0; y < ySize; y++) {
-    for (let x = 0; x < xSize; x++) {
-      const value = heights[y * xSize + x];
-      const scaledValue = (value - minValue) / (maxValue - minValue);
-      const colorIndex = Math.floor(scaledValue * (colorPalette.length - 1));
-      const color = colorPalette[colorIndex];
-
-      const pixelIndex = (y * xSize + x); // Each pixel has 4 values (R, G, B, A)
-      data[pixelIndex] = color;
-      /*
-      data[pixelIndex] = color >> 16 & 0xFF;     // Red component
-      data[pixelIndex + 1] = color >> 8 & 0xFF;  // Green component
-      data[pixelIndex + 2] = color & 0xFF;       // Blue component
-      data[pixelIndex + 3] = 255;                // Alpha component (fully opaque)
-      */
-    }
-  }
-
-  const tileCanvas = new OffscreenCanvas(xSize, ySize);
-  const tileCtx = tileCanvas.getContext('2d');
-  tileCtx.putImageData(imageData, 0, 0);
-
-  // Cache the imageData
-  imageDataCache[`${rowIndex}_${columnIndex}`] = tileCanvas;
-
-  return tileCanvas;
-}
+const tileCache = {};
 
 function updateVisualizationWithCache(Z) {
   const rootUrl = 'http://localhost:8000/test/example_files/synthetic_square/';
   const baseUrl = `${rootUrl}dzdata_files/`;
+
+  const colorMapper = new ColorMapper(Palettes.inferno(20), 0.0, 1.0);
+  const canvas = document.getElementById('myCanvas');
+  const ctx = canvas.getContext('2d');
 
   axios.get(`${rootUrl}dzdata.json`).then(response => {
     const imageSize = response.data.Image.Size;
     const tileSize = response.data.Image.TileSize;
     const maxZoomLevel = Math.ceil(Math.log2(Math.max(imageSize.Width, imageSize.Height)));
     zoomLevelFactor = (2 ** (maxZoomLevel - Z + 2));
-    console.log("zlf ",zoomLevelFactor);
+    console.log("zlf ", zoomLevelFactor);
     const widthAtZoomLevel = imageSize.Width / zoomLevelFactor;
     const heightAtZoomLevel = imageSize.Height / zoomLevelFactor;
     const numColumns = (widthAtZoomLevel / tileSize);
@@ -94,63 +150,24 @@ function updateVisualizationWithCache(Z) {
     console.log('numRows:', numRows);
 
     updateScaleBar(Z);
-    const canvas = document.getElementById('myCanvas');
     const cx = canvas.width;
     const cy = canvas.height;
-
-    let atLeastOneFileLoaded = false;
-    const minValue = 0.0;
-    const maxValue = 1.0;
-    const colorPalette = Palettes.inferno(20);
 
     for (let rowIndex = 0; rowIndex < Math.max(1, 2 ** (Math.floor(Math.log2(numRows)))); rowIndex++) {
       for (let columnIndex = 0; columnIndex < Math.max(1, 2 ** (Math.floor(Math.log2(numColumns)))); columnIndex++) {
         const fileName = `${rowIndex}_${columnIndex}.nc`;
         const netcdfUrl = `${baseUrl}${Math.floor(Z)}/${fileName}`;
 
-        const xPos =renderingPosition.x + columnIndex * (cx / Math.max(0.5, (Math.log2(numColumns))));
+        const xPos = renderingPosition.x + columnIndex * (cx / Math.max(0.5, (Math.log2(numColumns))));
         const yPos = renderingPosition.y + rowIndex * (cy / Math.max(0.5, (Math.log2(numRows))));
         const cellWidth = cx / Math.max(0.5, (Math.log2(numColumns)));
         const cellHeight = cy / Math.max(0.5, (Math.log2(numRows)));
 
-        if (imageDataCache[`${rowIndex}_${columnIndex}`]) {
-          // If imageData is already cached, use it directly
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(imageDataCache[`${rowIndex}_${columnIndex}`], xPos, yPos, cellWidth, cellHeight);
-
-          atLeastOneFileLoaded = true;
-        } else {
-          axios
-            .get(netcdfUrl, { responseType: 'arraybuffer' })
-            .then((response) => response.data)
-            .then((data) => {
-              const netcdfReader = new NetCDFReader(data);
-              const imageData = renderTileToImageDataAndCache(
-                netcdfReader,
-                minValue,
-                maxValue,
-                colorPalette,
-                rowIndex,
-                columnIndex
-              );
-
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(imageData, xPos, yPos, cellWidth, cellHeight);
-
-              atLeastOneFileLoaded = true;
-            })
-            .catch((error) => {
-              console.error(`Error loading NetCDF file: ${netcdfUrl}`);
-              console.error(error);
-            });
+        if (!tileCache[`${rowIndex}_${columnIndex}`]) {
+          tileCache[`${rowIndex}_${columnIndex}`] = new Tile(colorMapper, netcdfUrl);
         }
+        tileCache[`${rowIndex}_${columnIndex}`].renderTo(ctx, xPos, yPos, cellWidth, cellHeight);
       }
-    }
-
-    if (atLeastOneFileLoaded) {
-      console.log('Successfully loaded');
-    } else {
-      console.log('No files were successfully loaded');
     }
 
     console.log(`Current Z value: ${Z}`);
@@ -171,10 +188,10 @@ window.addEventListener('wheel', (event) => {
   const MCy = event.clientY - canvas.getBoundingClientRect().top;
 
   // Calculate the change in mouse position in data coordinates
-  const MDx = (MCx - renderingPosition.x) *(zoomLevelFactor);
-  const MDy = (MCy - renderingPosition.y) *(zoomLevelFactor);
+  const MDx = (MCx - renderingPosition.x) * (zoomLevelFactor);
+  const MDy = (MCy - renderingPosition.y) * (zoomLevelFactor);
 
-  console.log(MDx,MDy,MCx,MCy,renderingPosition.x,renderingPosition.y,zoomLevelFactor);
+  console.log(MDx, MDy, MCx, MCy, renderingPosition.x, renderingPosition.y, zoomLevelFactor);
 
   // Update the Z value
   if (event.deltaY > 0) {
@@ -188,8 +205,8 @@ window.addEventListener('wheel', (event) => {
   }
 
   // Update rendering position based on the invariant conditions
-  renderingPosition.x = MCx - (MDx/ zoomLevelFactor);
-  renderingPosition.y = MCy - (MDy/ zoomLevelFactor);
+  renderingPosition.x = MCx - (MDx / zoomLevelFactor);
+  renderingPosition.y = MCy - (MDy / zoomLevelFactor);
 
   // Clear the canvas and update the visualization with the new rendering position
   ctx.clearRect(0, 0, cx, cy);
