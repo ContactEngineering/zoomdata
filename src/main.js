@@ -40,21 +40,34 @@ class ColorMapper {
   }
 }
 
+const tileCache = {};
+const cacheExpirationTime = 60000; // Cache expiration time in milliseconds
 
-// Cache the imageData
-//    tileCache[`${rowIndex}_${columnIndex}`] = tileCanvas;
-// if (tileCache[`${rowIndex}_${columnIndex}`]) {
-//  const ctx = canvas.getContext('2d');
+function clearExpiredTiles() {
+  const currentTime = new Date().getTime();
+
+  // Iterate over the tiles in the cache and remove expired ones
+  Object.keys(tileCache).forEach(key => {
+    const tile = tileCache[key];
+    if (currentTime - tile.lastAccessed > cacheExpirationTime) {
+      delete tileCache[key];
+    }
+  });
+}
+
+
 
 class Tile {
   colorMapper;
   url;
   tileCanvas;
+  lastAccessed; 
 
   constructor(colorMapper, url) {
     this.colorMapper = colorMapper;
     this.url = url;
     this.tileCanvas = null;
+    this.lastAccessed = 0;
   }
 
   clearCache() {
@@ -80,11 +93,16 @@ class Tile {
   renderTo(context, xPos, yPos, width, height) {
     if (this.tileCanvas == null) {
       this.fetch().then(tileCanvas => {
-        context.drawImage(tileCanvas, xPos, yPos, width, height);
+        const adjustedXPos = xPos - overlap * width;
+        const adjustedYPos = yPos - overlap * height;
+        const adjustedWidth = width + 2 * overlap * width;
+        const adjustedHeight = height + 2 * overlap * height;
+        context.drawImage(tileCanvas, adjustedXPos, adjustedYPos, adjustedWidth, adjustedHeight);
+        this.lastAccessed = new Date().getTime(); // Update the lastAccessed timestamp
       });
     } else {
-      // If imageData is already cached, use it directly
-      context.drawImage(this.tileCanvas, xPos, yPos, width, height);     
+      context.drawImage(this.tileCanvas, xPos, yPos, width, height);
+      this.lastAccessed = new Date().getTime(); // Update the lastAccessed timestamp
     }
   }
 }
@@ -135,7 +153,7 @@ let numColumns, numRows;
 
 let zoomLevelFactor = 1;  // Declare zoomLevelFactor outside of function
 
-updateVisualizationWithCache(Z);
+updateVisualizationWithCache(Z, renderingPosition);
 
 function updateScaleBar(Z) {
   const scaleValueElement = document.getElementById('scaleValue');
@@ -152,20 +170,27 @@ function renderColorBar(colorPalette) {
     colorBarGradient.appendChild(colorBlock);
   });
 }
-const tileCache = {};
 
-function updateVisualizationWithCache(Z) {
+let overlap;
+
+let maxZoomLevel;
+
+function updateVisualizationWithCache(Z, renderingPosition) {
   const rootUrl = 'http://localhost:8000/test/example_files/synthetic_square/';
   const baseUrl = `${rootUrl}dzdata_files/`;
 
   const colorMapper = new ColorMapper(Palettes.inferno(20), 0.0, 1.0);
   const canvas = document.getElementById('myCanvas');
   const ctx = canvas.getContext('2d');
+  // Clear expired tiles before rendering
+  clearExpiredTiles();
 
   axios.get(`${rootUrl}dzdata.json`).then(response => {
     const imageSize = response.data.Image.Size;
     const tileSize = response.data.Image.TileSize;
-    const maxZoomLevel = Math.ceil(Math.log2(Math.max(imageSize.Width, imageSize.Height)));
+    overlap = response.data.Image.Overlap;
+    console.log("overlap", overlap);
+    maxZoomLevel = Math.ceil(Math.log2(Math.max(imageSize.Width, imageSize.Height)));
     zoomLevelFactor = (2 ** (maxZoomLevel - Z + 2));
     console.log("zlf ", zoomLevelFactor);
     const widthAtZoomLevel = imageSize.Width / zoomLevelFactor;
@@ -180,28 +205,46 @@ function updateVisualizationWithCache(Z) {
     const cx = canvas.width;
     const cy = canvas.height;
 
+    const visibleTiles = [];
+
     for (let rowIndex = 0; rowIndex < Math.max(1, 2 ** (Math.floor(Math.log2(numRows)))); rowIndex++) {
       for (let columnIndex = 0; columnIndex < Math.max(1, 2 ** (Math.floor(Math.log2(numColumns)))); columnIndex++) {
         const fileName = `${rowIndex}_${columnIndex}.nc`;
         const netcdfUrl = `${baseUrl}${Math.floor(Z)}/${fileName}`;
 
-        const xPos = renderingPosition.x + columnIndex * (cx / Math.max(0.5, (Math.log2(numColumns))));
-        const yPos = renderingPosition.y + rowIndex * (cy / Math.max(0.5, (Math.log2(numRows))));
-        const cellWidth = cx / Math.max(0.5, (Math.log2(numColumns)));
-        const cellHeight = cy / Math.max(0.5, (Math.log2(numRows)));
+        const xPos = renderingPosition.x + columnIndex * (cx / Math.max(0.5, (Math.log2(numColumns)))) - overlap * cx;
+        const yPos = renderingPosition.y + rowIndex * (cy / Math.max(0.5, (Math.log2(numRows)))) - overlap * cy;
+        const cellWidth = cx / Math.max(0.5, (Math.log2(numColumns))) + 2 * overlap * cx;
+        const cellHeight = cy / Math.max(0.5, (Math.log2(numRows))) + 2 * overlap * cy;
 
-        if (!tileCache[`${rowIndex}_${columnIndex}`]) {
-          tileCache[`${rowIndex}_${columnIndex}`] = new Tile(colorMapper, netcdfUrl);
+
+
+        const tileIsVisible = (
+          xPos + cellWidth >= 0 && xPos <= cx &&
+          yPos + cellHeight >= 0 && yPos <= cy
+        );
+
+        if (tileIsVisible) {
+          if (!tileCache[`${rowIndex}_${columnIndex}`]) {
+            tileCache[`${rowIndex}_${columnIndex}`] = new Tile(colorMapper, netcdfUrl);
+          }
+          tileCache[`${rowIndex}_${columnIndex}`].renderTo(ctx, xPos, yPos, cellWidth, cellHeight);
         }
-        tileCache[`${rowIndex}_${columnIndex}`].renderTo(ctx, xPos, yPos, cellWidth, cellHeight);
       }
     }
-
     console.log(`Current Z value: ${Z}`);
   });
 }
 
 // ...
+let newzlf;
+
+function updateZoomValues(Z, MCx, MCy, MDx, MDy) {
+  newzlf = (2 ** (maxZoomLevel - Z + 2));
+  renderingPosition.x = MCx - (MDx / newzlf);
+  renderingPosition.y = MCy - (MDy / newzlf);
+}
+
 
 window.addEventListener('wheel', (event) => {
   const canvas = document.getElementById('myCanvas');
@@ -220,24 +263,24 @@ window.addEventListener('wheel', (event) => {
 
   console.log(MDx, MDy, MCx, MCy, renderingPosition.x, renderingPosition.y, zoomLevelFactor);
 
-  // Update the Z value
+    // Update the Z value
   if (event.deltaY > 0) {
-    if (Z > 0) {
-      Z = parseFloat((Z - 0.1).toFixed(2));
-    }
-  } else {
     if (Z < 10) {
       Z = parseFloat((Z + 0.1).toFixed(2));
+      updateZoomValues(Z, MCx, MCy, MDx, MDy); // Call the function to update newzlf and renderingPosition
+    }
+  } else {
+    if (Z > 0) {
+      Z = parseFloat((Z - 0.1).toFixed(2));
+      updateZoomValues(Z, MCx, MCy, MDx, MDy); // Call the function to update newzlf and renderingPosition
     }
   }
 
-  // Update rendering position based on the invariant conditions
-  renderingPosition.x = MCx - (MDx / zoomLevelFactor);
-  renderingPosition.y = MCy - (MDy / zoomLevelFactor);
+  console.log(renderingPosition.x, renderingPosition.y);
 
   // Clear the canvas and update the visualization with the new rendering position
   ctx.clearRect(0, 0, cx, cy);
-  updateVisualizationWithCache(Z);
+  updateVisualizationWithCache(Z, renderingPosition);
 });
 
 // ...
@@ -256,19 +299,20 @@ canvas.addEventListener('mousedown', (event) => {
 
 canvas.addEventListener('mousemove', (event) => {
   if (isDragging) {
-    // Update the rendering position based on mouse move and drag offset
-    renderingPosition.x = event.clientX - canvas.getBoundingClientRect().left - dragOffset.x;
-    renderingPosition.y = event.clientY - canvas.getBoundingClientRect().top - dragOffset.y;
-
     // Clear the canvas and update the visualization with the new rendering position
     const ctx = canvas.getContext('2d');
     const cx = canvas.width;
     const cy = canvas.height;
 
+    // Update the rendering position based on mouse move and drag offset
+    renderingPosition.x = event.clientX - canvas.getBoundingClientRect().left - dragOffset.x;
+    renderingPosition.y = event.clientY - canvas.getBoundingClientRect().top - dragOffset.y;
+
     ctx.clearRect(0, 0, cx, cy);
-    updateVisualizationWithCache(Z);
+    updateVisualizationWithCache(Z, renderingPosition);
   }
 });
+
 
 canvas.addEventListener('mouseup', () => {
   // Stop dragging
