@@ -241,8 +241,9 @@ let newzlf;
 
 function updateZoomValues(Z, MCx, MCy, MDx, MDy) {
   newzlf = (2 ** (maxZoomLevel - Z + 2));
-  renderingPosition.x = MCx - (MDx / newzlf);
-  renderingPosition.y = MCy - (MDy / newzlf);
+  renderingPosition.x = MCx - (MDx / newzlf) ;
+  renderingPosition.y = MCy - (MDy / newzlf) ;
+  return Promise.resolve(); // Resolve the Promise immediately
 }
 
 
@@ -267,22 +268,34 @@ window.addEventListener('wheel', (event) => {
   if (event.deltaY > 0) {
     if (Z < 10) {
       Z = parseFloat((Z + 0.1).toFixed(2));
-      updateZoomValues(Z, MCx, MCy, MDx, MDy); // Call the function to update newzlf and renderingPosition
+      updateZoomValues(Z, MCx, MCy, MDx, MDy)
+        .then(() => {
+          const canvas = document.getElementById('myCanvas');
+          const ctx = canvas.getContext('2d');
+          const cx = canvas.width;
+          const cy = canvas.height;
+
+          // Clear the canvas and update the visualization with the new rendering position
+          //ctx.clearRect(0, 0, cx, cy);
+          updateVisualizationWithCache(Z, renderingPosition);
+        });
     }
   } else {
     if (Z > 0) {
       Z = parseFloat((Z - 0.1).toFixed(2));
-      updateZoomValues(Z, MCx, MCy, MDx, MDy); // Call the function to update newzlf and renderingPosition
+      updateZoomValues(Z, MCx, MCy, MDx, MDy)
+        .then(() => {
+          const canvas = document.getElementById('myCanvas');
+          const ctx = canvas.getContext('2d');
+          const cx = canvas.width;
+          const cy = canvas.height;
+
+          // Clear the canvas and update the visualization with the new rendering position
+          //ctx.clearRect(0, 0, cx, cy);
+          updateVisualizationWithCache(Z, renderingPosition);
+        });
     }
   }
-
-  console.log(renderingPosition.x, renderingPosition.y);
-
-  // Clear the canvas and update the visualization with the new rendering position
-  ctx.clearRect(0, 0, cx, cy);
-  updateVisualizationWithCache(Z, renderingPosition);
-});
-
 // ...
 
 
