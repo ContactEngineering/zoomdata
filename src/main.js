@@ -151,7 +151,10 @@ class ZoomConfiguration {
 
 
 /* Tiled image is a representation at a specific zoom level. It takes care of
-   cachings tiles and can render to a rendering context. */
+   cachings tiles and can render to a rendering context.This class is responsible for
+   rendering a portion of the zoomable image based on the provided canvas and zoom level.
+   It efficiently manages tiles, only fetching and rendering the ones that are visible on the canvas. */
+
 class TiledImage {
   zoomConfiguration;
   colorMapper;
@@ -172,25 +175,76 @@ class TiledImage {
     const scaledWidth = this.zoomConfiguration.imageSize.Width / scaleFactor;
     const scaledHeight = this.zoomConfiguration.imageSize.Height / scaleFactor;
 
+    const FixedDSFforonefile= this.zoomConfiguration.imageSize.Width/ this.zoomConfiguration.tileSize;
+
     // Find level in image stack to render; this is the zoom level for which we load tile data
     const dataZoomLevel = Math.round(fractionalZoomLevel) < 0 ? 0 : 
       Math.round(fractionalZoomLevel) > this.zoomConfiguration.maxZoomLevel ? this.zoomConfiguration.maxZoomLevel :
       Math.round(fractionalZoomLevel);
 
-    const dataScaleFactor = this.zoomConfiguration.scaleFactorAtZoomLevel(dataZoomLevel);
+    let dataScaleFactor = this.zoomConfiguration.scaleFactorAtZoomLevel(dataZoomLevel);
+    let i =0;
+
+
+
+    switch (true) {
+    case fractionalZoomLevel > this.zoomConfiguration.maxZoomLevel - 0.5:
+        i = 1;
+        break;
+    case fractionalZoomLevel > this.zoomConfiguration.maxZoomLevel - 1.5:
+        i = 2;
+        break;
+    case fractionalZoomLevel > this.zoomConfiguration.maxZoomLevel - 2.5:
+        i = 4;
+        break;
+    case fractionalZoomLevel > this.zoomConfiguration.maxZoomLevel - 3.5:
+        i = 8;
+        break;
+    case fractionalZoomLevel > this.zoomConfiguration.maxZoomLevel - 4.5:
+        i = 16;
+        break;
+    case fractionalZoomLevel > this.zoomConfiguration.maxZoomLevel - 5.5:
+        i = 32;
+        break;
+    case fractionalZoomLevel > this.zoomConfiguration.maxZoomLevel - 6.5:
+        i = 64;
+        break;
+    case fractionalZoomLevel > this.zoomConfiguration.maxZoomLevel - 7.5:
+        i = 128;
+        break;
+    case fractionalZoomLevel > this.zoomConfiguration.maxZoomLevel - 8.5:
+        i = 256;
+        break;
+    case fractionalZoomLevel > this.zoomConfiguration.maxZoomLevel - 9.5:
+        i = 512;
+        break;
+    default:
+        i = FixedDSFforonefile;
+        break;
+}
+
+
+    dataScaleFactor = Math.min(i,FixedDSFforonefile);
+    console.log('DSF',dataScaleFactor)
+
     const numColumns = Math.ceil(this.zoomConfiguration.imageSize.Width / (dataScaleFactor * this.zoomConfiguration.tileSize));
     const numRows = Math.ceil(this.zoomConfiguration.imageSize.Height / (dataScaleFactor * this.zoomConfiguration.tileSize));
-    const scaledTileSize = this.zoomConfiguration.tileSize * dataScaleFactor / scaleFactor;
+    const scaledTileSize = this.zoomConfiguration.tileSize * (Math.min(dataScaleFactor,FixedDSFforonefile) / scaleFactor);
   
-    console.log(fractionalZoomLevel, dataZoomLevel);
+    console.log('drip',this.zoomConfiguration.maxZoomLevel, fractionalZoomLevel, dataZoomLevel,scaledTileSize,this.zoomConfiguration.tileSize,this.zoomConfiguration.imageSize.Width,this.zoomConfiguration.imageSize.Height, dataScaleFactor, scaleFactor,numColumns,numRows);
 
     for (let columnIndex = 0; columnIndex < numColumns; columnIndex++) {
       for (let rowIndex = 0; rowIndex < numRows; rowIndex++) {
         const fileName = `${rowIndex}_${columnIndex}.nc`;
+
         const dataUrl = `${this.zoomConfiguration.baseUrl}${dataZoomLevel}/${fileName}`;
 
         const tileXPos = xPos + columnIndex * scaledTileSize;
         const tileYPos = yPos + rowIndex * scaledTileSize;
+
+        console.log('blip',numColumns,numRows, columnIndex, rowIndex,fileName,dataUrl, xPos, scaledTileSize, tileXPos, yPos,tileYPos);
+
+
 
         const tileIsVisible = (
           tileXPos >= -scaledTileSize && tileXPos <= canvas.width &&
@@ -198,6 +252,7 @@ class TiledImage {
         );
 
         const key = `${dataZoomLevel}/${rowIndex}_${columnIndex}`;
+
         if (tileIsVisible) {
           if (!this.tileCache[key]) {
             this.tileCache[key] = new Tile(this.colorMapper, dataUrl);
@@ -209,8 +264,6 @@ class TiledImage {
 
   }
 }
-
-
 /* The full zoomable stack */
 class ZoomData {
   canvasElementId;
@@ -245,6 +298,7 @@ class ZoomData {
     this.isDragging = false;
     this.xDragOffset = 0;
     this.yDragOffset = 0;
+
   }
 
   startRendering() {
@@ -253,9 +307,11 @@ class ZoomData {
     this.colorMapper = new ColorMapper(Palettes.inferno(20), 0.0, 1.0);
 
     this.zoomConfiguration.fetch().then(zoomConfiguration => {
-      this.zoomLevel = zoomConfiguration.maxZoomLevel;
+      this.zoomLevel = zoomConfiguration.maxZoomLevel - 4;
       this.tiledImage = new TiledImage(zoomConfiguration, this.colorMapper);
       this.tiledImage.renderTo(this.canvas, this.xPos, this.yPos, this.zoomLevel);
+
+      document.getElementById('scaleValue').innerText = this.zoomLevel.toFixed(2);
 
       // Install event handlers
       this.canvas.addEventListener('wheel', (event) => this.wheelEvent(event), { passive:false });
@@ -280,11 +336,11 @@ class ZoomData {
     const yPosDataMouse = (yPosCanvasMouse - this.yPos) * oldScaleFactor;
 
     // Update zoom level
-    if (event.deltaY > 0) {
+    if (event.deltaY > 0 && this.zoomLevel < 14.90) {
       this.zoomLevel += this.zoomLevelIncrement;
-    } else if (event.deltaY < 0) {
+    } else if (event.deltaY < 0 && this.zoomLevel > 0.10) {
       this.zoomLevel -= this.zoomLevelIncrement;
-    }
+    } 
 
     // Shift image such that mouse position stays invariant
     const newScaleFactor = this.zoomConfiguration.scaleFactorAtZoomLevel(this.zoomLevel)
@@ -293,6 +349,8 @@ class ZoomData {
   
     // Rerender tiled image
     this.tiledImage.renderTo(this.canvas, this.xPos, this.yPos, this.zoomLevel);
+
+    document.getElementById('scaleValue').innerText = this.zoomLevel.toFixed(2);
   }
 
   mouseDownEvent(event) {
@@ -325,159 +383,11 @@ class ZoomData {
 
 
 /* For demonstration purposes, render an example file to 'myCanvas' */
-const zoomData = new ZoomData('myCanvas', 'http://localhost:8000/test/example_files/synthetic_square/');
+const zoomData = new ZoomData('myCanvas', 'http://localhost:8000/test/example_files/synthetic_square2/');
+
 zoomData.startRendering();
 
-/*
-function updateVisualizationWithCache(Z, renderingPosition) {
-  const baseUrl = `${rootUrl}dzdata_files/`;
 
-  // Clear expired tiles before rendering
-  clearExpiredTiles();
-
-  axios.get(`${rootUrl}dzdata.json`).then(response => {
-    const imageSize = response.data.Image.Size;
-    const tileSize = response.data.Image.TileSize;
-    overlap = response.data.Image.Overlap;
-    console.log("overlap", overlap);
-    maxZoomLevel = Math.ceil(Math.log2(Math.max(imageSize.Width, imageSize.Height)));
-    zoomLevelFactor = (2 ** (maxZoomLevel - Z + 2));
-    console.log("zlf ", zoomLevelFactor);
-    const widthAtZoomLevel = imageSize.Width / zoomLevelFactor;
-    const heightAtZoomLevel = imageSize.Height / zoomLevelFactor;
-    const numColumns = (widthAtZoomLevel / tileSize);
-    const numRows = (heightAtZoomLevel / tileSize);
-
-    console.log('numColumns:', numColumns);
-    console.log('numRows:', numRows);
-
-    updateScaleBar(Z);
-    console.log(`Current Z value: ${Z}`);
-  });
-}
-
-// ...
-let newzlf;
-
-function updateZoomValues(Z, MCx, MCy, MDx, MDy) {
-  newzlf = (2 ** (maxZoomLevel - Z + 2));
-  console.log(zoomLevelFactor, newzlf);
-  renderingPosition.x = MCx - (MDx / newzlf) ;
-  renderingPosition.y = MCy - (MDy / newzlf) ;
-  return Promise.resolve(); // Resolve the Promise immediately
-}
-
-
-window.addEventListener('wheel', (event) => {
-  // Store the current mouse position in canvas coordinates
-  const MCx = event.clientX - canvas.getBoundingClientRect().left;
-  const MCy = event.clientY - canvas.getBoundingClientRect().top;
-
-  // Calculate the change in mouse position in data coordinates
-  const MDx = (MCx - renderingPosition.x) * (zoomLevelFactor);
-  const MDy = (MCy - renderingPosition.y) * (zoomLevelFactor);
-
-    // Update the Z value
-  if (event.deltaY > 0) {
-    if (Z < 10) {
-      Z = parseFloat((Z + 0.1).toFixed(2));
-      updateZoomValues(Z, MCx, MCy, MDx, MDy)
-        .then(() => {
-          const canvas = document.getElementById('myCanvas');
-          const ctx = canvas.getContext('2d');
-          const cx = canvas.width;
-          const cy = canvas.height;
-
-          // Clear the canvas and update the visualization with the new rendering position
-          //ctx.clearRect(0, 0, cx, cy);
-          updateVisualizationWithCache(Z, renderingPosition);
-        });
-    }
-  } else {
-    if (Z > 0) {
-      Z = parseFloat((Z - 0.1).toFixed(2));
-      updateZoomValues(Z, MCx, MCy, MDx, MDy)
-        .then(() => {
-          const canvas = document.getElementById('myCanvas');
-          const ctx = canvas.getContext('2d');
-          const cx = canvas.width;
-          const cy = canvas.height;
-
-          // Clear the canvas and update the visualization with the new rendering position
-          //ctx.clearRect(0, 0, cx, cy);
-          updateVisualizationWithCache(Z, renderingPosition);
-        });
-    }
-  }
-});
-// ...
-
-
-//const canvas = document.getElementById('myCanvas');
-
-canvas.addEventListener('mousedown', (event) => {
-  // Start dragging
-  isDragging = true;
-
-  // Update the drag offset based on the mouse click coordinates
-  dragOffset.x = event.clientX - canvas.getBoundingClientRect().left - renderingPosition.x;
-  dragOffset.y = event.clientY - canvas.getBoundingClientRect().top - renderingPosition.y;
-});
-
-canvas.addEventListener('mousemove', (event) => {
-  if (isDragging) {
-    // Clear the canvas and update the visualization with the new rendering position
-    const ctx = canvas.getContext('2d');
-    const cx = canvas.width;
-    const cy = canvas.height;
-
-    // Update the rendering position based on mouse move and drag offset
-    renderingPosition.x = event.clientX - canvas.getBoundingClientRect().left - dragOffset.x;
-    renderingPosition.y = event.clientY - canvas.getBoundingClientRect().top - dragOffset.y;
-
-    ctx.clearRect(0, 0, cx, cy);
-    updateVisualizationWithCache(Z, renderingPosition);
-  }
-});
-
-
-canvas.addEventListener('mouseup', () => {
-  // Stop dragging
-  isDragging = false;
-});
-
-// Define the magnification level (Z)
-let Z = 9.8;
-
-
-// Define the initial rendering position
-let renderingPosition = { x: 0, y: 0 };
-let isDragging = false;
-let dragOffset = { x: 0, y: 0 }; // Store the initial offset
-
-let numColumns, numRows;
-
-
-let zoomLevelFactor = 1;  // Declare zoomLevelFactor outside of function
-
-
-
-
-
-updateVisualizationWithCache(Z, renderingPosition);
-
-function updateScaleBar(Z) {
-  const scaleValueElement = document.getElementById('scaleValue');
-  scaleValueElement.textContent = `Z = ${Z}`;
-}
-
-
-let overlap;
-
-let maxZoomLevel;
-
-
-*/
 
 function renderColorBar(colorPalette) {
   const colorBarGradient = document.getElementById('colorBarGradient');
@@ -491,3 +401,4 @@ function renderColorBar(colorPalette) {
 }
 
 renderColorBar(Palettes.inferno(20));
+
