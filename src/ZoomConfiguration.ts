@@ -1,0 +1,175 @@
+import type { DZIMetadata, ImageSize } from './types';
+
+/**
+ * Represents the global zoom configuration loaded from dzdata.json.
+ * Contains information about image dimensions, tile size, and zoom levels.
+ */
+export class ZoomConfiguration {
+  readonly rootUrl: string;
+  readonly baseUrl: string;
+
+  private _imageSize: ImageSize | null = null;
+  private _tileSize: number | null = null;
+  private _overlap: number | null = null;
+  private _maxZoomLevel: number | null = null;
+  private _loaded: boolean = false;
+
+  /**
+   * Create a new ZoomConfiguration
+   * @param rootUrl - Root URL where dzdata.json is located
+   */
+  constructor(rootUrl: string) {
+    // Ensure rootUrl ends with /
+    this.rootUrl = rootUrl.endsWith('/') ? rootUrl : `${rootUrl}/`;
+    this.baseUrl = `${this.rootUrl}dzdata_files/`;
+  }
+
+  /**
+   * Check if configuration has been loaded
+   */
+  get isLoaded(): boolean {
+    return this._loaded;
+  }
+
+  /**
+   * Get the image size (throws if not loaded)
+   */
+  get imageSize(): ImageSize {
+    this.assertLoaded();
+    return this._imageSize!;
+  }
+
+  /**
+   * Get the tile size (throws if not loaded)
+   */
+  get tileSize(): number {
+    this.assertLoaded();
+    return this._tileSize!;
+  }
+
+  /**
+   * Get the overlap (throws if not loaded)
+   */
+  get overlap(): number {
+    this.assertLoaded();
+    return this._overlap!;
+  }
+
+  /**
+   * Get the maximum zoom level (throws if not loaded)
+   */
+  get maxZoomLevel(): number {
+    this.assertLoaded();
+    return this._maxZoomLevel!;
+  }
+
+  /**
+   * Assert that configuration is loaded
+   */
+  private assertLoaded(): void {
+    if (!this._loaded) {
+      throw new Error('ZoomConfiguration not loaded. Call fetch() first.');
+    }
+  }
+
+  /**
+   * Fetch and parse the dzdata.json configuration file
+   * @returns This ZoomConfiguration instance (for chaining)
+   */
+  async fetch(): Promise<this> {
+    const url = `${this.rootUrl}dzdata.json`;
+
+    try {
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data: DZIMetadata = await response.json();
+
+      // Validate required fields
+      if (!data.Image) {
+        throw new Error('Invalid dzdata.json: missing "Image" field');
+      }
+      if (!data.Image.Size || typeof data.Image.Size.Width !== 'number' || typeof data.Image.Size.Height !== 'number') {
+        throw new Error('Invalid dzdata.json: missing or invalid "Image.Size"');
+      }
+      if (typeof data.Image.TileSize !== 'number') {
+        throw new Error('Invalid dzdata.json: missing or invalid "Image.TileSize"');
+      }
+
+      this._imageSize = data.Image.Size;
+      this._tileSize = data.Image.TileSize;
+      this._overlap = data.Image.Overlap ?? 0;
+
+      // Calculate max zoom level: the level where the full image fits in one dimension
+      // At level N, scale factor is 2^(maxLevel - N), so at maxLevel, scale is 1
+      this._maxZoomLevel = Math.ceil(
+        Math.log2(Math.max(this._imageSize.Width, this._imageSize.Height))
+      );
+
+      this._loaded = true;
+      return this;
+    } catch (err) {
+      if (err instanceof Error) {
+        throw new Error(`Failed to load zoom configuration from ${url}: ${err.message}`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Calculate the scale factor at a given zoom level.
+   * Higher zoom levels = smaller scale factor = more zoomed in.
+   * @param zoomLevel - The zoom level (can be fractional)
+   * @returns Scale factor (pixels in data space per pixel in screen space)
+   */
+  scaleFactorAtZoomLevel(zoomLevel: number): number {
+    this.assertLoaded();
+    return Math.pow(2, this._maxZoomLevel! - zoomLevel);
+  }
+
+  /**
+   * Get the number of tile columns at a given zoom level
+   * @param zoomLevel - The integer zoom level
+   * @returns Number of columns
+   */
+  getNumColumns(zoomLevel: number): number {
+    this.assertLoaded();
+    const scaleFactor = this.scaleFactorAtZoomLevel(zoomLevel);
+    return Math.ceil(this._imageSize!.Width / (scaleFactor * this._tileSize!));
+  }
+
+  /**
+   * Get the number of tile rows at a given zoom level
+   * @param zoomLevel - The integer zoom level
+   * @returns Number of rows
+   */
+  getNumRows(zoomLevel: number): number {
+    this.assertLoaded();
+    const scaleFactor = this.scaleFactorAtZoomLevel(zoomLevel);
+    return Math.ceil(this._imageSize!.Height / (scaleFactor * this._tileSize!));
+  }
+
+  /**
+   * Clamp a zoom level to valid bounds
+   * @param zoomLevel - The zoom level to clamp
+   * @returns Clamped zoom level between 0 and maxZoomLevel
+   */
+  clampZoomLevel(zoomLevel: number): number {
+    this.assertLoaded();
+    return Math.max(0, Math.min(this._maxZoomLevel!, zoomLevel));
+  }
+
+  /**
+   * Get the URL for a specific tile
+   * @param zoomLevel - The zoom level
+   * @param row - The row index
+   * @param column - The column index
+   * @returns Full URL to the tile file
+   */
+  getTileUrl(zoomLevel: number, row: number, column: number): string {
+    return `${this.baseUrl}${zoomLevel}/${row}_${column}.nc`;
+  }
+}
