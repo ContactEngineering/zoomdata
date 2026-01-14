@@ -103,11 +103,12 @@ export class ZoomConfiguration {
       this._tileSize = data.Image.TileSize;
       this._overlap = data.Image.Overlap ?? 0;
 
-      // Calculate max zoom level: the level where the full image fits in one dimension
-      // At level N, scale factor is 2^(maxLevel - N), so at maxLevel, scale is 1
-      this._maxZoomLevel = Math.ceil(
-        Math.log2(Math.max(this._imageSize.Width, this._imageSize.Height))
-      );
+      // Calculate max zoom level based on DZI convention:
+      // - Level N has 2^N pixel resolution
+      // - At level log2(tileSize), one tile covers tileSize pixels at 1:1 scale
+      // - This is the "natural" max zoom level where scaleFactor = 1
+      // Higher levels (if they exist in the data) show sub-pixel zoom
+      this._maxZoomLevel = Math.ceil(Math.log2(this._tileSize!));
 
       this._loaded = true;
       return this;
@@ -170,6 +171,7 @@ export class ZoomConfiguration {
    * @returns Full URL to the tile file
    */
   getTileUrl(zoomLevel: number, row: number, column: number): string {
-    return `${this.baseUrl}${zoomLevel}/${row}_${column}.nc`;
+    // DZI convention: files are named column_row (x_y)
+    return `${this.baseUrl}${zoomLevel}/${column}_${row}.nc`;
   }
 }

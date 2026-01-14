@@ -8,11 +8,11 @@
 export { ZoomData } from './ZoomData';
 
 // Supporting classes (for advanced usage)
-export { ColorMapper } from './ColorMapper';
 export { Tile } from './Tile';
 export { TileCache } from './TileCache';
 export { TiledImage } from './TiledImage';
 export { ZoomConfiguration } from './ZoomConfiguration';
+export { WebGLRenderer } from './WebGLRenderer';
 
 // Types
 export type {

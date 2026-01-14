@@ -1,4 +1,3 @@
-import { ColorMapper } from './ColorMapper';
 import { Palettes } from './palettes';
 import { ZoomConfiguration } from './ZoomConfiguration';
 import { TiledImage } from './TiledImage';
@@ -11,11 +10,9 @@ import type { ZoomDataOptions } from './types';
 export class ZoomData {
   private readonly rootUrl: string;
   private readonly zoomLevelIncrement: number;
-  private readonly debug: boolean;
 
   private canvas: HTMLCanvasElement | null = null;
   private config: ZoomConfiguration | null = null;
-  private colorMapper: ColorMapper | null = null;
   private tiledImage: TiledImage | null = null;
 
   // View state
@@ -39,6 +36,11 @@ export class ZoomData {
   private boundMouseUpHandler: (e: MouseEvent) => void;
   private boundMouseLeaveHandler: (e: MouseEvent) => void;
 
+  // Color mapping options
+  private colorPalette: number[];
+  private minValue: number;
+  private maxValue: number;
+
   // Callbacks
   onZoomChange: ((zoomLevel: number) => void) | null = null;
   onError: ((error: Error) => void) | null = null;
@@ -50,7 +52,6 @@ export class ZoomData {
   constructor(options: ZoomDataOptions) {
     this.rootUrl = options.rootUrl;
     this.zoomLevelIncrement = options.zoomLevelIncrement ?? 0.1;
-    this.debug = options.debug ?? false;
 
     // Bind methods for event handlers
     this.boundRender = this.render.bind(this);
@@ -60,15 +61,11 @@ export class ZoomData {
     this.boundMouseUpHandler = this.handleMouseUp.bind(this);
     this.boundMouseLeaveHandler = this.handleMouseLeave.bind(this);
 
-    // Store palette options for later use
+    // Store color mapping options
     this.colorPalette = options.colorPalette ?? Palettes.inferno(256);
     this.minValue = options.minValue ?? 0.0;
     this.maxValue = options.maxValue ?? 1.0;
   }
-
-  private colorPalette: number[];
-  private minValue: number;
-  private maxValue: number;
 
   /**
    * Initialize and start rendering to a canvas element
@@ -101,11 +98,9 @@ export class ZoomData {
       throw error;
     }
 
-    // Create color mapper
-    this.colorMapper = new ColorMapper(this.colorPalette, this.minValue, this.maxValue);
-
-    // Create tiled image
-    this.tiledImage = new TiledImage(this.config, this.colorMapper, 100, this.debug);
+    // Create tiled image with WebGL renderer
+    this.tiledImage = new TiledImage(this.config, 100);
+    this.tiledImage.initRenderer(this.canvas, this.colorPalette, this.minValue, this.maxValue);
 
     // Set up tile load callback for re-rendering
     this.tiledImage.onTilesLoaded = () => {
@@ -127,6 +122,7 @@ export class ZoomData {
    */
   stop(): void {
     this.removeEventHandlers();
+    this.tiledImage?.dispose();
     this.canvas = null;
     this.tiledImage = null;
   }
@@ -331,29 +327,23 @@ export class ZoomData {
    * @param maxValue - New maximum value
    */
   setColorRange(minValue: number, maxValue: number): void {
-    if (!this.colorMapper || !this.tiledImage || !this.config) return;
+    if (!this.tiledImage) return;
 
     this.minValue = minValue;
     this.maxValue = maxValue;
-    this.colorMapper = new ColorMapper(this.colorPalette, minValue, maxValue);
-    this.tiledImage = new TiledImage(this.config, this.colorMapper, 100, this.debug);
-    this.tiledImage.onTilesLoaded = () => this.scheduleRender();
-
+    this.tiledImage.setValueRange(minValue, maxValue);
     this.scheduleRender();
   }
 
   /**
-   * Update the color palette
+   * Update the color palette (instant with WebGL - just updates GPU texture)
    * @param colorPalette - New color palette array
    */
   setColorPalette(colorPalette: number[]): void {
-    if (!this.tiledImage || !this.config) return;
+    if (!this.tiledImage) return;
 
     this.colorPalette = colorPalette;
-    this.colorMapper = new ColorMapper(this.colorPalette, this.minValue, this.maxValue);
-    this.tiledImage = new TiledImage(this.config, this.colorMapper, 100, this.debug);
-    this.tiledImage.onTilesLoaded = () => this.scheduleRender();
-
+    this.tiledImage.setPalette(colorPalette);
     this.scheduleRender();
   }
 }

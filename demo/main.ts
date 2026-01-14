@@ -72,13 +72,14 @@ function updateZoomDisplay(level: number, maxLevel: number): void {
 // Main initialization
 async function init(): Promise<void> {
   // Create ZoomData instance
+  // Note: NetCDF data is pre-normalized to [0, 1] range
+  // The dzdata.json ColorbarRange is for display labels only
   const zoomData = new ZoomData({
     rootUrl: DATA_URL,
     colorPalette: currentPalette,
     minValue: 0.0,
     maxValue: 1.0,
     zoomLevelIncrement: 0.1,
-    debug: false,
   });
 
   // Set up error handler
