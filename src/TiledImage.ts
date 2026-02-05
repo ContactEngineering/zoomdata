@@ -193,8 +193,8 @@ export class TiledImage {
           const subRow = row % scale;
 
           // Texture coordinates for the quadrant
-          const texLeft = subCol / scale;
-          const texTop = subRow / scale;
+          const texLeft = subRow / scale; 
+          const texTop = subCol / scale; 
           const texSize = 1 / scale;
 
           console.log(`  Using ${cacheKey} with tex coords (${texLeft}, ${texTop}, ${texSize}, ${texSize})`);
@@ -251,8 +251,8 @@ export class TiledImage {
     // Render visible tiles
     for (let col = 0; col < numColumns; col++) {
       for (let row = 0; row < numRows; row++) {
-        const tileX = Math.round(xPos + col * scaledTileSize);
-        const tileY = Math.round(yPos + row * scaledTileSize);
+        const tileX = Math.round(xPos + row * scaledTileSize);  
+        const tileY = Math.round(yPos + col * scaledTileSize);     
         const roundedTileSize = Math.round(scaledTileSize);
 
         // Skip tiles outside visible area

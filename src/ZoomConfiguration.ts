@@ -108,7 +108,7 @@ export class ZoomConfiguration {
       // - At level log2(tileSize), one tile covers tileSize pixels at 1:1 scale
       // - This is the "natural" max zoom level where scaleFactor = 1
       // Higher levels (if they exist in the data) show sub-pixel zoom
-      this._maxZoomLevel = Math.ceil(Math.log2(this._tileSize!));
+      this._maxZoomLevel = Math.ceil(Math.log2(Math.max(this._imageSize!.Width, this._imageSize!.Height)));
 
       this._loaded = true;
       return this;
@@ -155,7 +155,7 @@ export class ZoomConfiguration {
 
   /**
    * Clamp a zoom level to valid bounds
-   * @param zoomLevel - The zoom level to clamp
+   * @param zoomLevel - The zoom level to clamp.
    * @returns Clamped zoom level between 0 and maxZoomLevel
    */
   clampZoomLevel(zoomLevel: number): number {
