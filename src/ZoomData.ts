@@ -108,7 +108,9 @@ export class ZoomData {
     };
 
     // Set initial zoom level (zoomed out a bit from max)
-    this.zoomLevel = Math.max(0, this.config.maxZoomLevel - 4);
+    // this.zoomLevel = Math.max(0, this.config.maxZoomLevel - 4);      
+    this.zoomLevel = this.computeFitZoomLevel();   // made the change here to zoom in a bit more by default
+    this.centerImage();
 
     // Install event handlers
     this.installEventHandlers();
@@ -312,14 +314,23 @@ export class ZoomData {
   /**
    * Reset view to initial state (centered, default zoom)
    */
+
+  // resetView(): void {
+  //   this.xPos = 0;
+  //   this.yPos = 0;
+  //   if (this.config) {
+  //     this.zoomLevel = Math.max(0, this.config.maxZoomLevel - 4);   // made the change here to zoom in a bit more by default
+  //   }
+  //   this.scheduleRender();
+  // }
+
   resetView(): void {
-    this.xPos = 0;
-    this.yPos = 0;
-    if (this.config) {
-      this.zoomLevel = Math.max(0, this.config.maxZoomLevel - 4);
-    }
-    this.scheduleRender();
-  }
+  if (!this.canvas || !this.config) return;
+
+  this.zoomLevel = this.computeFitZoomLevel();
+  this.centerImage();
+  this.scheduleRender();
+}
 
   /**
    * Update the color mapping range
@@ -346,4 +357,40 @@ export class ZoomData {
     this.tiledImage.setPalette(colorPalette);
     this.scheduleRender();
   }
+private computeFitZoomLevel(): number {
+  if (!this.canvas || !this.config) return 0;
+
+  const imageWidth = this.config.imageSize.Width;
+  const imageHeight = this.config.imageSize.Height;
+
+  const canvasWidth = this.canvas.width;
+  const canvasHeight = this.canvas.height;
+
+  const requiredScale = Math.max(
+    imageWidth / canvasWidth,
+    imageHeight / canvasHeight
+  );
+
+  const maxZoom = this.config.maxZoomLevel;
+
+  const zoomLevel = maxZoom - Math.log2(requiredScale);
+
+  return this.config.clampZoomLevel(zoomLevel);
+}
+
+private centerImage(): void {
+  if (!this.canvas || !this.config) return;
+
+  const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
+
+  const imageWidth = this.config.imageSize.Width;
+  const imageHeight = this.config.imageSize.Height;
+
+  const scaledWidth = imageWidth / scale;
+  const scaledHeight = imageHeight / scale;
+
+  this.xPos = (this.canvas.width - scaledWidth) / 2;
+  this.yPos = (this.canvas.height - scaledHeight) / 2;
+}
+
 }
