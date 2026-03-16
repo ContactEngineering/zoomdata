@@ -293,6 +293,20 @@ export class ZoomData {
     return this.config?.maxZoomLevel ?? 0;
   }
 
+
+  getImageWidth(): number {
+    return this.config?.imageSize.Width ?? 0;
+  }
+
+  getImageHeight(): number {
+    return this.config?.imageSize.Height ?? 0;
+  }
+
+  getOverlap(): number {
+    return this.config?.overlap ?? 0;
+  }
+
+
   /**
    * Get the current view position
    */

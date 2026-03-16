@@ -133,7 +133,9 @@ export class TiledImage {
     col: number,
     x: number,
     y: number,
-    size: number
+    // size: number
+    width: number, 
+    height: number
   ): boolean {
     if (!this.renderer) return false;
 
@@ -143,8 +145,40 @@ export class TiledImage {
     if (tile.isReady()) {
       const texture = this.getTileTexture(tile, cacheKey);
       if (texture) {
-        console.log(`Rendering tile ${cacheKey} at (${x}, ${y}) size ${size}`);
-        this.renderer.renderTile(texture, x, y, size, size);
+        // console.log(`Rendering tile ${cacheKey} at (${x}, ${y}) size ${size}`);
+        // this.renderer.renderTile(texture, x, y, size, size);
+
+        // console.log(`Rendering tile ${cacheKey} at (${x}, ${y}) size ${width}x${height}`);
+        // this.renderer.renderTile(texture, x, y, width, height);
+
+
+
+        // check for overlaps to make sure the tiles are correctly aligned.
+        const ov = this.config.overlap;  
+        const tileSize = this.config.tileSize;
+
+        const hasLeft = row > 0;  // overlap on left if not in first column
+        const hasTop  = col > 0;  // overlap on top if not in first row
+
+        const leftOverlap = hasLeft ? ov : 0;
+        const topOverlap  = hasTop  ? ov : 0;
+
+        
+        const availableW = texture.width  - leftOverlap;  
+        const availableH = texture.height - topOverlap;
+
+        const texX = leftOverlap / texture.width;
+        const texY = topOverlap  / texture.height;
+        const texW = Math.min(tileSize, availableW) / texture.width; // clamping done to avoid sampling outside texture when overlaps are present
+        const texH = Math.min(tileSize, availableH) / texture.height;
+
+        console.log(`Rendering tile ${cacheKey} at (${x}, ${y}) size ${width}x${height}`);
+
+        this.renderer.renderTileRegion(
+          texture,
+          x, y, width, height,
+          texX, texY, texW, texH
+        );
         return true;
       }
     }
@@ -162,7 +196,8 @@ export class TiledImage {
     col: number,
     x: number,
     y: number,
-    size: number
+    // size: number
+    width: number, height: number
   ): boolean {
     if (!this.renderer) return false;
 
@@ -202,7 +237,8 @@ export class TiledImage {
           // Render just this portion of the parent texture
           this.renderer.renderTileRegion(
             texture,
-            x, y, size, size,
+            // x, y, size, size,
+            x, y, width, height,
             texLeft, texTop, texSize, texSize
           );
           return true;
@@ -249,20 +285,24 @@ export class TiledImage {
     const scaledTileSize = this.config.tileSize * (dataScaleFactor / displayScaleFactor);
 
     // Render visible tiles
-    for (let col = 0; col < numColumns; col++) {
-      for (let row = 0; row < numRows; row++) {
-        const tileX = Math.round(xPos + row * scaledTileSize);  
-        const tileY = Math.round(yPos + col * scaledTileSize);     
-        const roundedTileSize = Math.round(scaledTileSize);
+    for (let row = 0; row < numRows; row++) {
+      for (let col = 0; col < numColumns; col++) {
+        console.log(`Processing tile (${dataZoomLevel}, ${row}, ${col})`,"position:", xPos, yPos, "scaledTileSize:", scaledTileSize);
+     
+  
+        const tileX = Math.round(xPos + row * scaledTileSize);
+        const tileY = Math.round(yPos + col * scaledTileSize);
+        const tileW = Math.round(xPos + (row + 1) * scaledTileSize) - tileX; // get actual pixel size to avoid gaps/overlaps due to rounding
+        const tileH = Math.round(yPos + (col + 1) * scaledTileSize) - tileY; 
 
         // Skip tiles outside visible area
-        if (!this.isTileVisible(tileX, tileY, roundedTileSize, canvas.width, canvas.height)) {
+        if (!this.isTileVisible(tileX, tileY, Math.max(tileW, tileH), canvas.width, canvas.height)) {
           continue;
         }
 
-        // Try to render the tile, fall back to lower resolution if not loaded
-        if (!this.renderTile(dataZoomLevel, row, col, tileX, tileY, roundedTileSize)) {
-          this.renderFallback(dataZoomLevel, row, col, tileX, tileY, roundedTileSize);
+        // // Try to render the tile, fall back to lower resolution if not loaded
+        if (!this.renderTile(dataZoomLevel, row, col, tileX, tileY, tileW, tileH)) {
+          this.renderFallback(dataZoomLevel, row, col, tileX, tileY, tileW, tileH);
         }
       }
     }
