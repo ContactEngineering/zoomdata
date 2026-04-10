@@ -8,6 +8,8 @@
 export { ZoomData } from './ZoomData';
 
 // Supporting classes (for advanced usage)
+export { Colorbar } from './Colorbar';
+export type { ColorbarOptions, ColorbarOrientation } from './Colorbar';
 export { Tile } from './Tile';
 export { TileCache } from './TileCache';
 export { TiledImage } from './TiledImage';

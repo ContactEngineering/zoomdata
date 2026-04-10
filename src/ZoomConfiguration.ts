@@ -1,4 +1,4 @@
-import type { DZIMetadata, ImageSize } from './types';
+import type { ColorbarRange, DZIMetadata, ImageSize } from './types';
 
 /**
  * Represents the global zoom configuration loaded from dzdata.json.
@@ -13,6 +13,9 @@ export class ZoomConfiguration {
   private _overlap: number | null = null;
   private _maxZoomLevel: number | null = null;
   private _loaded: boolean = false;
+  private _colorbarRange: ColorbarRange | null = null;
+  private _colorbarTitle: string | null = null;
+  private _pixelsPerMeter: ImageSize | null = null;
 
   /**
    * Create a new ZoomConfiguration
@@ -64,6 +67,29 @@ export class ZoomConfiguration {
   }
 
   /**
+   * Get the colorbar range (throws if not loaded)
+   */
+  get colorbarRange(): ColorbarRange {
+    this.assertLoaded();
+
+    console.log('ZoomConfiguration: colorbarRange = %o', this._colorbarRange);
+    return this._colorbarRange!;
+  }
+
+  get colorbarTitle(): string {
+    this.assertLoaded();
+    return this._colorbarTitle ? this._colorbarTitle : 'Height';
+  }
+
+
+
+  /* Get the pixels per meter value */
+  get pixelsPerMeter(): ImageSize {
+    this.assertLoaded();
+    return this._pixelsPerMeter!; 
+  }
+
+  /**
    * Assert that configuration is loaded
    */
   private assertLoaded(): void {
@@ -102,6 +128,9 @@ export class ZoomConfiguration {
       this._imageSize = data.Image.Size;
       this._tileSize = data.Image.TileSize;
       this._overlap = data.Image.Overlap ?? 0;
+      this._colorbarRange = data.Image.ColorbarRange ?? null;
+      this._colorbarTitle = data.Image.ColorbarTitle ?? null; 
+      this._pixelsPerMeter = data.Image.PixelsPerMeter ?? null;
 
       // Calculate max zoom level based on DZI convention:
       // - Level N has 2^N pixel resolution

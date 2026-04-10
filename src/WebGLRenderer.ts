@@ -298,6 +298,8 @@ export class WebGLRenderer {
 
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
@@ -395,6 +397,8 @@ export class WebGLRenderer {
     // Set translation and scale for this tile
     gl.uniform2f(this.translationLocation, x, y);
     gl.uniform2f(this.scaleLocation, width, height);
+    
+    console.log(`renderTileRegion: x=${x}, y=${y}, width=${width}, height=${height}, texX=${texX}, texY=${texY}, texW=${texW}, texH=${texH}`);
 
     // Set value range for color mapping
     // Note: For 8-bit luminance texture, the shader sees values in [0,1] already normalized

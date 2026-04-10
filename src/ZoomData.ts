@@ -35,15 +35,23 @@ export class ZoomData {
   private boundMouseMoveHandler: (e: MouseEvent) => void;
   private boundMouseUpHandler: (e: MouseEvent) => void;
   private boundMouseLeaveHandler: (e: MouseEvent) => void;
+  private boundDblClickHandler: (e: MouseEvent) => void;  // double-click for crosshair
 
   // Color mapping options
   private colorPalette: number[];
   private minValue: number;
   private maxValue: number;
 
+  // Crosshair state (image pixel coordinates, null = not placed)
+  private crosshairImageX: number | null = null;
+  private crosshairImageY: number | null = null;
+
+
   // Callbacks
   onZoomChange: ((zoomLevel: number) => void) | null = null;
   onError: ((error: Error) => void) | null = null;
+  /** Fired when the crosshair is placed or moved. imageX/Y are in image pixel coordinates. */
+  onCrosshairChange: ((imageX: number, imageY: number) => void) | null = null;
 
   /**
    * Create a new ZoomData instance
@@ -60,6 +68,7 @@ export class ZoomData {
     this.boundMouseMoveHandler = this.handleMouseMove.bind(this);
     this.boundMouseUpHandler = this.handleMouseUp.bind(this);
     this.boundMouseLeaveHandler = this.handleMouseLeave.bind(this);
+    this.boundDblClickHandler = this.handleDblClick.bind(this);
 
     // Store color mapping options
     this.colorPalette = options.colorPalette ?? Palettes.inferno(256);
@@ -86,6 +95,7 @@ export class ZoomData {
       this.canvas = canvas;
     }
 
+
     // Load configuration
     this.config = new ZoomConfiguration(this.rootUrl);
     try {
@@ -105,6 +115,9 @@ export class ZoomData {
     // Set up tile load callback for re-rendering
     this.tiledImage.onTilesLoaded = () => {
       this.scheduleRender();
+      // refresh line scans when new tiles arrive (they may now have data)
+      if (this.crosshairImageX !== null && this.crosshairImageY !== null) {
+      }
     };
 
     // Set initial zoom level (zoomed out a bit from max)
@@ -150,6 +163,63 @@ export class ZoomData {
     }
 
     this.tiledImage.renderTo(this.canvas, this.xPos, this.yPos, this.zoomLevel);
+
+    // Draw the crosshair overlay on top of the WebGL canvas
+    this.drawCrosshair();
+  }
+
+  /**
+   * Draw the crosshair onto the transparent overlay canvas that sits on top of
+   * the main WebGL canvas. The overlay canvas must have id = mainCanvas.id + '-crosshair'.
+   */
+  private drawCrosshair(): void {
+    if (this.crosshairImageX === null || this.crosshairImageY === null) return;
+    if (!this.canvas || !this.config) return;
+
+    // Convert image pixel coordinates to screen coordinates
+    const scale   = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
+    const screenX = this.xPos + this.crosshairImageX / scale;
+    const screenY = this.yPos + this.crosshairImageY / scale;
+
+    const overlay = document.getElementById(this.canvas.id + '-crosshair') as HTMLCanvasElement | null;
+    if (!overlay) return;
+
+    // Keep overlay size in sync with main canvas
+    overlay.width  = this.canvas.width;
+    overlay.height = this.canvas.height;
+
+    const ctx = overlay.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    ctx.strokeStyle = 'rgba(255, 75, 75, 0.9)';
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([6, 4]);
+
+    // Horizontal line
+    ctx.beginPath();
+    ctx.moveTo(0, screenY);
+    ctx.lineTo(overlay.width, screenY);
+    ctx.stroke();
+
+    // Vertical line
+    ctx.beginPath();
+    ctx.moveTo(screenX, 0);
+    ctx.lineTo(screenX, overlay.height);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+
+    // Dot at intersection with white ring
+    ctx.fillStyle = 'rgba(255, 75, 75, 0.9)';
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, 4.5, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   /**
@@ -163,6 +233,7 @@ export class ZoomData {
     this.canvas.addEventListener('mousemove', this.boundMouseMoveHandler);
     this.canvas.addEventListener('mouseup', this.boundMouseUpHandler);
     this.canvas.addEventListener('mouseleave', this.boundMouseLeaveHandler);
+    this.canvas.addEventListener('dblclick', this.boundDblClickHandler);
   }
 
   /**
@@ -176,6 +247,7 @@ export class ZoomData {
     this.canvas.removeEventListener('mousemove', this.boundMouseMoveHandler);
     this.canvas.removeEventListener('mouseup', this.boundMouseUpHandler);
     this.canvas.removeEventListener('mouseleave', this.boundMouseLeaveHandler);
+    this.canvas.removeEventListener('dblclick', this.boundDblClickHandler);
   }
 
   /**
@@ -265,6 +337,49 @@ export class ZoomData {
   }
 
   /**
+   * Handle double-click: place the crosshair at the clicked image position
+   * and update the line scan panels.
+   */
+  private handleDblClick(event: MouseEvent): void {
+    if (!this.canvas || !this.config) return;
+
+    // Convert screen coordinates to image pixel coordinates
+    const rect   = this.canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+    const scale  = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
+
+    // Clamp to image bounds
+    this.crosshairImageX = Math.max(0, Math.min(this.config.imageSize.Width  - 1, (mouseX - this.xPos) * scale));
+    this.crosshairImageY = Math.max(0, Math.min(this.config.imageSize.Height - 1, (mouseY - this.yPos) * scale));
+
+    if (this.onCrosshairChange) {
+      this.onCrosshairChange(this.crosshairImageX, this.crosshairImageY);
+    }
+
+    this.scheduleRender();
+  }
+
+  /**
+   * Clear the crosshair and reset the line scan panels to their empty state.
+   */
+  clearCrosshair(): void {
+    this.crosshairImageX = null;
+    this.crosshairImageY = null;
+
+    // Clear the overlay canvas
+    if (this.canvas?.id) {
+      const overlay = document.getElementById(this.canvas.id + '-crosshair') as HTMLCanvasElement | null;
+      if (overlay) {
+        overlay.getContext('2d')?.clearRect(0, 0, overlay.width, overlay.height);
+      }
+    }
+
+    this.scheduleRender();
+  }
+
+
+  /**
    * Get the current zoom level
    */
   getZoomLevel(): number {
@@ -306,6 +421,31 @@ export class ZoomData {
     return this.config?.overlap ?? 0;
   }
 
+  /* get the colorbar range and title */
+
+  getMinColorBarRange(): number {
+    return this.config?.colorbarRange.Minimum ?? 0;
+  }
+
+  getMaxColorBarRange(): number {
+    return this.config?.colorbarRange.Maximum ?? 0;
+  }
+
+  getColorbarTitle(): string | null {
+    return this.config?.colorbarTitle ?? null;
+  }
+
+
+  /**
+   * Get the pixels per meter value
+   */
+  getPixelsPerMeterWidth(): number {
+    return this.config?.pixelsPerMeter?.Width ?? 0;
+  }
+
+  getPixelsPerMeterHeight(): number {
+    return this.config?.pixelsPerMeter?.Height ?? 0;
+  }
 
   /**
    * Get the current view position
@@ -371,6 +511,7 @@ export class ZoomData {
     this.tiledImage.setPalette(colorPalette);
     this.scheduleRender();
   }
+
 private computeFitZoomLevel(): number {
   if (!this.canvas || !this.config) return 0;
 

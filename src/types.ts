@@ -14,6 +14,12 @@ export interface DZIMetadata {
     Size: ImageSize;
     TileSize: number;
     Overlap: number;
+    ColorbarRange?: {
+      Minimum: number;
+      Maximum: number;
+    };
+    ColorbarTitle?: string;
+    PixelsPerMeter?: ImageSize
   };
 }
 
@@ -62,3 +68,10 @@ export interface ViewportBounds {
 
 /** Callback for render completion */
 export type RenderCallback = () => void;
+
+
+
+export interface ColorbarRange {
+  Minimum: number;
+  Maximum: number;
+}

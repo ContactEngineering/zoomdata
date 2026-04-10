@@ -2,10 +2,11 @@
  * Demo application for ZoomData
  */
 
-import { ZoomData, Palettes, inferno, viridis, magma, plasma, grayscale } from '../src/index';
+import { ZoomData, Palettes, inferno, viridis, magma, plasma, grayscale, Colorbar} from '../src/index';
 
+import { Scalebar } from '../src/Scalebar';
 // Configuration - points to examples directory served by cors_server.py
-const DATA_URL = 'http://localhost:8000/examples/synthetic_square/';
+const DATA_URL = 'http://localhost:8000/examples/synthetic_square4/';
 
 // Available colormaps
 const COLORMAPS: Record<string, (n: number) => number[]> = {
@@ -19,30 +20,8 @@ const COLORMAPS: Record<string, (n: number) => number[]> = {
 // Current palette
 let currentPalette = Palettes.inferno(256);
 
-// Create color bar visualization
-function renderColorBar(palette: number[]): void {
-  const colorBar = document.getElementById('colorBar');
-  if (!colorBar) return;
-
-  colorBar.innerHTML = '';
-
-  // Sample colors from palette
-  const numSamples = Math.min(palette.length, 50);
-  const step = Math.floor(palette.length / numSamples);
-
-  for (let i = 0; i < palette.length; i += step) {
-    const color = palette[i];
-    const div = document.createElement('div');
-
-    // Convert 32-bit RGBA to CSS color (little-endian: 0xAABBGGRR)
-    const r = color & 0xff;
-    const g = (color >> 8) & 0xff;
-    const b = (color >> 16) & 0xff;
-    div.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-
-    colorBar.appendChild(div);
-  }
-}
+let scalebar: Scalebar | null = null;
+let colorbar: Colorbar | null = null;
 
 // Show error message
 function showError(message: string): void {
@@ -69,6 +48,20 @@ function updateZoomDisplay(level: number, maxLevel: number): void {
   }
 }
 
+// Update crosshair position readout in the controls panel
+function updateCrosshairInfo(imageX: number, imageY: number, ppmW: number, ppmH: number): void {
+  const el = document.getElementById('crosshairInfo');
+  if (!el) return;
+  // Convert image pixels tophysical µm
+  const xUm = ((imageX / ppmW) * 1e6).toFixed(2);
+  const yUm = ((imageY / ppmH) * 1e6).toFixed(2);
+  el.textContent = `x: ${xUm} µm   y: ${yUm} µm`;
+
+  // Show the clear button once a crosshair has been placed
+  const clearBtn = document.getElementById('clearCrosshairBtn');
+  if (clearBtn) clearBtn.style.display = 'inline-block';
+}
+
 // Main initialization
 async function init(): Promise<void> {
   // Create ZoomData instance
@@ -90,10 +83,23 @@ async function init(): Promise<void> {
   // Set up zoom change handler
   zoomData.onZoomChange = (level) => {
     updateZoomDisplay(level, zoomData.getMaxZoomLevel());
+
+    // Updating the scalebar on every zoom change
+    const canvas = document.getElementById('zoomCanvas') as HTMLCanvasElement;
+    if (scalebar && canvas) {
+      scalebar.update(canvas.width, level);
+    }
+
   };
 
-  // Render initial color bar
-  renderColorBar(currentPalette);
+  // Set up crosshair change handler  updates the coordinate readout
+  zoomData.onCrosshairChange = (imageX, imageY) => {
+    updateCrosshairInfo(
+      imageX, imageY,
+      zoomData.getPixelsPerMeterWidth(),
+      zoomData.getPixelsPerMeterHeight(),
+    );
+  };
 
   // Set up colormap selector
   const colormapSelect = document.getElementById('colormapSelect') as HTMLSelectElement | null;
@@ -104,7 +110,7 @@ async function init(): Promise<void> {
       if (colormapFn) {
         currentPalette = colormapFn(256);
         zoomData.setColorPalette(currentPalette);
-        renderColorBar(currentPalette);
+        colorbar?.setPalette(currentPalette);
       }
     });
   }
@@ -115,14 +121,77 @@ async function init(): Promise<void> {
     resetBtn.addEventListener('click', () => {
       zoomData.resetView();
       updateZoomDisplay(zoomData.getZoomLevel(), zoomData.getMaxZoomLevel());
+
+      // updating the scalebar after reset also
+      const canvas = document.getElementById('zoomCanvas') as HTMLCanvasElement;
+      if (scalebar && canvas) {
+        scalebar.update(canvas.width, zoomData.getZoomLevel());
+      }
+
+
     });
   }
 
-  // Start rendering
+  // Set up clear crosshair button
+  const clearCrosshairBtn = document.getElementById('clearCrosshairBtn');
+  if (clearCrosshairBtn) {
+    clearCrosshairBtn.addEventListener('click', () => {
+      zoomData.clearCrosshair();
+      const el = document.getElementById('crosshairInfo');
+      if (el) el.textContent = '—';
+      clearCrosshairBtn.style.display = 'none';
+    });
+  }
+
+  // Start rendering 
   try {
     hideError();
     await zoomData.start('zoomCanvas');
     updateZoomDisplay(zoomData.getZoomLevel(), zoomData.getMaxZoomLevel());
+
+
+    // console.log('maxZoomLevel:', zoomData.getMaxZoomLevel());
+    // console.log('imageWidth:', zoomData.getImageWidth());
+    // console.log('physicalWidth:', 1.0);
+
+
+    // initializing the scalebar 
+
+    scalebar = new Scalebar(
+      'scalebar-bar',
+      'scalebar-label',
+      zoomData.getPixelsPerMeterWidth(), // physical width in meters
+      zoomData.getPixelsPerMeterHeight(),  // physical height in meters
+      zoomData.getImageWidth(),      // full res pixel width
+      zoomData.getMaxZoomLevel()     // max zoom level
+    );
+
+    // Initial scalebar render
+    const canvas = document.getElementById('zoomCanvas') as HTMLCanvasElement;
+    // console.log('canvas.width:', canvas.width);
+    // console.log('canvas.offsetWidth:', canvas.offsetWidth);
+    scalebar.update(canvas.width, zoomData.getZoomLevel());
+
+    const DISPLAY_MIN = zoomData.getMinColorBarRange();
+    const DISPLAY_MAX = zoomData.getMaxColorBarRange();
+    const DISPLAY_TITLE = zoomData.getColorbarTitle() ?? 'Height';
+
+    // Initialize Colorbar
+    const colorbarCanvas = document.getElementById('colorbarCanvas') as HTMLCanvasElement | null;
+    if (colorbarCanvas) {
+      colorbar = new Colorbar({
+        canvas: colorbarCanvas,
+        palette: currentPalette,
+        minValue: DISPLAY_MIN,
+        maxValue: DISPLAY_MAX,
+        title: DISPLAY_TITLE,
+        numTicks: 7,
+        fontSize: 12,
+      });
+      colorbar.render();
+    }
+
+
   } catch (error) {
     // Error is already shown via onError callback
     console.error('Failed to start ZoomData:', error);
