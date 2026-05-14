@@ -424,11 +424,11 @@ export class ZoomData {
   /* get the colorbar range and title */
 
   getMinColorBarRange(): number {
-    return this.config?.colorbarRange.Minimum ?? 0;
+    return this.config?.colorbarRange?.Minimum ?? 0;
   }
 
   getMaxColorBarRange(): number {
-    return this.config?.colorbarRange.Maximum ?? 0;
+    return this.config?.colorbarRange?.Maximum ?? 0;
   }
 
   getColorbarTitle(): string | null {

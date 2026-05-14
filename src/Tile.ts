@@ -115,15 +115,6 @@ export class Tile {
       // Store raw data as Float32Array
       this.data = new Float32Array(heights as number[]);
 
-      // Debug: verify dimensions match data length
-      const expectedLength = this.width * this.height;
-      if (this.data.length !== expectedLength) {
-        console.error(`Tile ${this.url}: dimension mismatch! width=${this.width}, height=${this.height}, expected=${expectedLength}, actual=${this.data.length}`);
-        console.error(`  varDimensions:`, varDimensions);
-      } else {
-        console.log(`Tile ${this.url}: loaded ${this.width}x${this.height} = ${this.data.length} values`);
-      }
-
       this.state = TileState.Ready;
     } catch (err) {
       this.state = TileState.Error;
@@ -139,8 +130,6 @@ export class Tile {
   clearCache(): void {
     this.data = null;
     this.fetchPromise = null;
-    if (this.state === TileState.Ready) {
-      this.state = TileState.Pending;
-    }
+    this.state = TileState.Pending;
   }
 }

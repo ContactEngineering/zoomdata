@@ -67,13 +67,11 @@ export class ZoomConfiguration {
   }
 
   /**
-   * Get the colorbar range (throws if not loaded)
+   * Get the colorbar range, or null if not specified in the configuration
    */
-  get colorbarRange(): ColorbarRange {
+  get colorbarRange(): ColorbarRange | null {
     this.assertLoaded();
-
-    console.log('ZoomConfiguration: colorbarRange = %o', this._colorbarRange);
-    return this._colorbarRange!;
+    return this._colorbarRange;
   }
 
   get colorbarTitle(): string {
