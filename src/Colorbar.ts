@@ -230,7 +230,7 @@ export class Colorbar {
     // We sample the palette at each pixel row for accuracy
     for (let row = 0; row < h; row++) {
       // row=0 → top → maxValue; row=h-1 → bottom → minValue
-      const frac = 1 - row / (h - 1);
+      const frac = h > 1 ? 1 - row / (h - 1) : 1;
       const idx = Math.min(Math.floor(frac * (n - 1)), n - 1);
       ctx.fillStyle = this.paletteEntryToCss(this.palette[idx]);
       ctx.fillRect(x, y + row, w, 1);

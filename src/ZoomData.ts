@@ -547,50 +547,64 @@ export class ZoomData {
     if (this.crosshairImageX === null || this.crosshairImageY === null) return;
     if (!this.config) return;
 
-    const imageWidth = this.config.imageSize.Width;
-    const imageHeight = this.config.imageSize.Height;
+    // Convert image pixels to physical micro meters using pixels-per-meter metadata.
+    // If the metadata is absent, fall back to image pixel coordinates so the
+    // crosshair/line-scan positions remain finite numbers instead of NaN.
+    const ppmW = this.config.pixelsPerMeter?.Width;   // px/m
+    const ppmH = this.config.pixelsPerMeter?.Height;  // px/m
+    const xToPos = ppmW ? (px: number) => (px / ppmW) * 1e6 : (px: number) => px;
+    const yToPos = ppmH ? (px: number) => (px / ppmH) * 1e6 : (px: number) => px;
+    const crossX_um = xToPos(this.crosshairImageX);
+    const crossY_um = yToPos(this.crosshairImageY);
 
-    // Convert image pixels to physical micro meters using pixels-per-meter metadata
-    const ppmW = this.config.pixelsPerMeter?.Width    // px/m
-    const ppmH = this.config.pixelsPerMeter?.Height  // px/m
-    // const physW_um = (imageWidth / ppmW) * 1e6;   // total physical width in micro meters
-    // const physH_um = (imageHeight / ppmH) * 1e6;   // total physical height in micro meters
-    
-    const crossX_um = (this.crosshairImageX / ppmW) * 1e6;   // tells the renderer where to draw the vertical line indicating the crosshair position
-    const crossY_um = (this.crosshairImageY / ppmH) * 1e6;
-
-    // const physPos = this.imagePixelToPhysicalUm(this.crosshairImageX, this.crosshairImageY);
-    // if (!physPos) return;
-    // const { x_um: crossX_um, y_um: crossY_um } = physPos;
-
-
-    // Helper: convert normalised [0,1] data to physical height values using colorbar range 
-    const colorbarMin = this.config.colorbarRange?.Minimum 
-    const colorbarMax = this.config.colorbarRange?.Maximum
-    const toPhys = (norm: number) => norm * (colorbarMax - colorbarMin) + colorbarMin;  // converts the normalised values in the netCDF tiles to physical units 
+    // Helper: convert normalised [0,1] data to physical height values using colorbar range.
+    // If the colorbar range is absent, pass the raw value through.
+    const colorbarMin = this.config.colorbarRange?.Minimum;
+    const colorbarMax = this.config.colorbarRange?.Maximum;
+    const hasColorbarRange = colorbarMin !== undefined && colorbarMax !== undefined;
+    const toPhys = hasColorbarRange
+      ? (norm: number) => norm * (colorbarMax! - colorbarMin!) + colorbarMin!
+      : (norm: number) => norm;
 
     const valueAxisLabel = `${this.config.colorbarTitle ?? 'Height'}`;
 
+    const finiteRange = (arr: Float32Array): { min: number; max: number } => {
+      let min = Infinity, max = -Infinity;
+      for (let i = 0; i < arr.length; i++) {
+        const v = arr[i];
+        if (isFinite(v)) {
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
+      }
+      if (!isFinite(min)) { min = 0; max = 1; }
+      else if (min === max) { min -= 0.5; max += 0.5; }
+      return { min, max };
+    };
+
     // **************** Horizontal scan panel*****************************
     if (this.hScanRenderer) {
-          const hScan = this.extractHorizontalScan(this.crosshairImageY);
-          if (hScan && hScan.values.length > 0) {
-            const { values: raw, positions } = hScan;
-            const n = raw.length;
-            const physValues = new Float32Array(n);
-            for (let i = 0; i < n; i++) {
-              physValues[i] = toPhys(raw[i]);
-            }
+      const hScan = this.extractHorizontalScan(this.crosshairImageY);
+      if (hScan && hScan.values.length > 0) {
+        const { values: raw, positions } = hScan;
+        const n = raw.length;
+        const physValues = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+          physValues[i] = toPhys(raw[i]);
+        }
+        const { min: vMin, max: vMax } = hasColorbarRange
+          ? { min: colorbarMin!, max: colorbarMax! }
+          : finiteRange(physValues);
         const scanData: LineScanData = {
-          values: physValues, 
-          positions:positions,
+          values: physValues,
+          positions: positions,
           crosshairPos: crossX_um,
-          posMin: positions[0], posMax: positions[positions.length - 1],  
+          posMin: positions[0], posMax: positions[positions.length - 1],
           posAxisLabel: 'x-position',
           valueAxisLabel,
           orientation: 'horizontal',
-          valueMin: colorbarMin,
-          valueMax: colorbarMax,
+          valueMin: vMin,
+          valueMax: vMax,
         };
         this.hScanRenderer.draw(scanData);
       } else {
@@ -600,24 +614,27 @@ export class ZoomData {
 
     // *********** Vertical scan panel ****************************
     if (this.vScanRenderer) {
-          const vScan = this.extractVerticalScan(this.crosshairImageX);
-          if (vScan && vScan.values.length > 0) {
-            const { values: raw, positions } = vScan;
-            const n = raw.length;
-            const physValues = new Float32Array(n);
-            for (let i = 0; i < n; i++) {
-              physValues[i] = toPhys(raw[i]);
-            }
+      const vScan = this.extractVerticalScan(this.crosshairImageX);
+      if (vScan && vScan.values.length > 0) {
+        const { values: raw, positions } = vScan;
+        const n = raw.length;
+        const physValues = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+          physValues[i] = toPhys(raw[i]);
+        }
+        const { min: vMin, max: vMax } = hasColorbarRange
+          ? { min: colorbarMin!, max: colorbarMax! }
+          : finiteRange(physValues);
         const scanData: LineScanData = {
-          values: physValues, 
+          values: physValues,
           positions: positions,
           crosshairPos: crossY_um,
           posMin: positions[0], posMax: positions[positions.length - 1],
           posAxisLabel: 'y-position',
           valueAxisLabel,
           orientation: 'vertical',
-          valueMin: colorbarMin,
-          valueMax: colorbarMax,
+          valueMin: vMin,
+          valueMax: vMax,
         };
         this.vScanRenderer.draw(scanData);
       } else {

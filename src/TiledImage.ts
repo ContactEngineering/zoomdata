@@ -29,6 +29,13 @@ export class TiledImage {
   ) {
     this.config = config;
     this.tileCache = new TileCache(maxCacheSize);
+    this.tileCache.onEvict = (key) => {
+      const texture = this.textureCache.get(key);
+      if (texture) {
+        this.renderer?.deleteTileTexture(texture);
+        this.textureCache.delete(key);
+      }
+    };
   }
 
   /**
@@ -157,8 +164,8 @@ export class TiledImage {
         const ov = this.config.overlap;  
         const tileSize = this.config.tileSize;
 
-        const hasLeft = row > 0;  // overlap on left if not in first column
-        const hasTop  = col > 0;  // overlap on top if not in first row
+        const hasLeft = col > 0;  // overlap on left if not in first column
+        const hasTop  = row > 0;  // overlap on top if not in first row
 
         const leftOverlap = hasLeft ? ov : 0;
         const topOverlap  = hasTop  ? ov : 0;
@@ -228,8 +235,8 @@ export class TiledImage {
           const subRow = row % scale;
 
           // Texture coordinates for the quadrant
-          const texLeft = subRow / scale; 
-          const texTop = subCol / scale; 
+          const texLeft = subCol / scale;
+          const texTop = subRow / scale;
           const texSize = 1 / scale;
 
           console.log(`  Using ${cacheKey} with tex coords (${texLeft}, ${texTop}, ${texSize}, ${texSize})`);
@@ -290,10 +297,10 @@ export class TiledImage {
         console.log(`Processing tile (${dataZoomLevel}, ${row}, ${col})`,"position:", xPos, yPos, "scaledTileSize:", scaledTileSize);
      
   
-        const tileX = Math.round(xPos + row * scaledTileSize);
-        const tileY = Math.round(yPos + col * scaledTileSize);
-        const tileW = Math.round(xPos + (row + 1) * scaledTileSize) - tileX; // get actual pixel size to avoid gaps/overlaps due to rounding
-        const tileH = Math.round(yPos + (col + 1) * scaledTileSize) - tileY; 
+        const tileX = Math.round(xPos + col * scaledTileSize);
+        const tileY = Math.round(yPos + row * scaledTileSize);
+        const tileW = Math.round(xPos + (col + 1) * scaledTileSize) - tileX; // get actual pixel size to avoid gaps/overlaps due to rounding
+        const tileH = Math.round(yPos + (row + 1) * scaledTileSize) - tileY;
 
         // Skip tiles outside visible area
         if (!this.isTileVisible(tileX, tileY, Math.max(tileW, tileH), canvas.width, canvas.height)) {

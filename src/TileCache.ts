@@ -8,6 +8,9 @@ export class TileCache {
   private cache: Map<string, Tile> = new Map();
   private readonly maxSize: number;
 
+  /** Called when a tile is evicted by the LRU policy. Not called for explicit delete/clear. */
+  onEvict: ((key: string, tile: Tile) => void) | null = null;
+
   /**
    * Create a new TileCache
    * @param maxSize - Maximum number of tiles to keep in cache (default: 100)
@@ -68,9 +71,10 @@ export class TileCache {
     // Evict oldest entries if at capacity
     while (this.cache.size >= this.maxSize) {
       const oldestKey = this.cache.keys().next().value;
-      if (oldestKey !== undefined) {
-        this.cache.delete(oldestKey);
-      }
+      if (oldestKey === undefined) break;
+      const oldestTile = this.cache.get(oldestKey)!;
+      this.cache.delete(oldestKey);
+      this.onEvict?.(oldestKey, oldestTile);
     }
 
     this.cache.set(key, tile);
