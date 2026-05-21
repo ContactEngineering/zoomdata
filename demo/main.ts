@@ -6,7 +6,7 @@ import { ZoomData, Palettes, inferno, viridis, magma, plasma, grayscale, Colorba
 
 import { Scalebar } from '../src/Scalebar';
 // Configuration - points to examples directory served by cors_server.py
-const DATA_URL = 'http://localhost:8000/examples/synthetic_square4/';
+const DATA_URL = 'http://localhost:8000/examples/ramp/';
 
 // Available colormaps
 const COLORMAPS: Record<string, (n: number) => number[]> = {
@@ -146,7 +146,7 @@ async function init(): Promise<void> {
   // Start rendering 
   try {
     hideError();
-    await zoomData.start('zoomCanvas');
+    await zoomData.start('zoomCanvas', 'hScanCanvas', 'vScanCanvas');
     updateZoomDisplay(zoomData.getZoomLevel(), zoomData.getMaxZoomLevel());
 
 

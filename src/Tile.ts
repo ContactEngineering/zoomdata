@@ -11,6 +11,8 @@ export class Tile {
   private state: TileState = TileState.Pending;
   private error: Error | null = null;
   private fetchPromise: Promise<void> | null = null;
+  xCoords: Float32Array | null = null;
+  yCoords: Float32Array | null = null;
 
   /** Width of the tile in pixels (set after fetch) */
   width: number = 0;
@@ -51,6 +53,16 @@ export class Tile {
    */
   getData(): Float32Array | null {
     return this.data;
+  }
+
+  /** get the x coordinates and y coordinates in micrometers */
+  
+  getXCoords(): Float32Array | null {
+    return this.xCoords;
+  }
+
+  getYCoords(): Float32Array | null {
+    return this.yCoords;
   }
 
   /**
@@ -95,6 +107,16 @@ export class Tile {
         throw new Error('NetCDF file missing "heights" variable');
       }
 
+      const x = reader.getDataVariable('x')  // x and y values 
+      if (!x) {
+        throw new Error('NetCDF file missing "x" variable');
+      }
+      const y = reader.getDataVariable('y')
+      if (!y) {
+        throw new Error('NetCDF file missing "y" variable');
+      }  
+
+      
       // Get dimensions from the heights variable itself
       const heightsVar = reader.variables.find((v) => v.name === 'heights');
       if (!heightsVar) {
@@ -115,6 +137,10 @@ export class Tile {
       // Store raw data as Float32Array
       this.data = new Float32Array(heights as number[]);
 
+      // Store x and y coordinates as Float32Arrays 
+      this.xCoords = new Float32Array(x as number[]);
+      this.yCoords = new Float32Array(y as number[]);
+
       // Debug: verify dimensions match data length
       const expectedLength = this.width * this.height;
       if (this.data.length !== expectedLength) {
@@ -131,6 +157,9 @@ export class Tile {
       this.fetchPromise = null;
       throw this.error;
     }
+
+
+    console.log("X coords:", this.xCoords, "Y coords:", this.yCoords);
   }
 
   /**

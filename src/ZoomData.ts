@@ -1,7 +1,11 @@
 import { Palettes } from './palettes';
 import { ZoomConfiguration } from './ZoomConfiguration';
 import { TiledImage } from './TiledImage';
+import { TileCache } from './TileCache';
+import { Tile } from './Tile';
 import type { ZoomDataOptions } from './types';
+import { LineScanRenderer, LineScanData  } from './LineScanRenderer';
+
 
 /**
  * Main entry point for zoomable data visualization.
@@ -47,6 +51,11 @@ export class ZoomData {
   private crosshairImageY: number | null = null;
 
 
+  // Line scan panel renderers (set via start())
+  private hScanRenderer: LineScanRenderer | null = null;  // horizontal profile (bottom panel)
+  private vScanRenderer: LineScanRenderer | null = null;  // vertical profile (left panel)
+
+
   // Callbacks
   onZoomChange: ((zoomLevel: number) => void) | null = null;
   onError: ((error: Error) => void) | null = null;
@@ -79,8 +88,14 @@ export class ZoomData {
   /**
    * Initialize and start rendering to a canvas element
    * @param canvas - Canvas element or element ID
+   * @param hScanCanvas - Canvas for the horizontal line scan panel
+   * @param vScanCanvas - Canvas for the vertical line scan panel
    */
-  async start(canvas: HTMLCanvasElement | string): Promise<void> {
+
+
+  async start(canvas: HTMLCanvasElement | string, hScanCanvas?: HTMLCanvasElement | string | null,
+    vScanCanvas?: HTMLCanvasElement | string | null,
+  ): Promise<void> {
     // Get canvas element
     if (typeof canvas === 'string') {
       const element = document.getElementById(canvas);
@@ -93,6 +108,23 @@ export class ZoomData {
       this.canvas = element;
     } else {
       this.canvas = canvas;
+    }
+
+
+    // Set up  line scan panel renderers
+    if (hScanCanvas) {
+      const el = typeof hScanCanvas === 'string'
+        ? (document.getElementById(hScanCanvas) as HTMLCanvasElement)
+        : hScanCanvas;
+      this.hScanRenderer = new LineScanRenderer(el);
+      this.hScanRenderer.drawEmpty();
+    }
+    if (vScanCanvas) {
+      const el = typeof vScanCanvas === 'string'
+        ? (document.getElementById(vScanCanvas) as HTMLCanvasElement)
+        : vScanCanvas;
+      this.vScanRenderer = new LineScanRenderer(el);
+      this.vScanRenderer.drawEmpty();
     }
 
 
@@ -115,9 +147,13 @@ export class ZoomData {
     // Set up tile load callback for re-rendering
     this.tiledImage.onTilesLoaded = () => {
       this.scheduleRender();
-      // refresh line scans when new tiles arrive (they may now have data)
+
+      // Also refresh line scans when new tiles arrive (they may now have data)
       if (this.crosshairImageX !== null && this.crosshairImageY !== null) {
+        this.updateLineScanPanels();
       }
+
+
     };
 
     // Set initial zoom level (zoomed out a bit from max)
@@ -177,7 +213,7 @@ export class ZoomData {
     if (!this.canvas || !this.config) return;
 
     // Convert image pixel coordinates to screen coordinates
-    const scale   = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
+    const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
     const screenX = this.xPos + this.crosshairImageX / scale;
     const screenY = this.yPos + this.crosshairImageY / scale;
 
@@ -185,7 +221,7 @@ export class ZoomData {
     if (!overlay) return;
 
     // Keep overlay size in sync with main canvas
-    overlay.width  = this.canvas.width;
+    overlay.width = this.canvas.width;
     overlay.height = this.canvas.height;
 
     const ctx = overlay.getContext('2d');
@@ -193,7 +229,7 @@ export class ZoomData {
     ctx.clearRect(0, 0, overlay.width, overlay.height);
 
     ctx.strokeStyle = 'rgba(255, 75, 75, 0.9)';
-    ctx.lineWidth   = 1.5;
+    ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 4]);
 
     // Horizontal line
@@ -216,7 +252,7 @@ export class ZoomData {
     ctx.arc(screenX, screenY, 4.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.lineWidth   = 1;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(screenX, screenY, 4.5, 0, Math.PI * 2);
     ctx.stroke();
@@ -287,6 +323,10 @@ export class ZoomData {
     }
 
     this.scheduleRender();
+    // Refresh line scans so they show the resolution that matches the new zoom
+    if (this.crosshairImageX !== null && this.crosshairImageY !== null) {
+      this.updateLineScanPanels();
+  }
   }
 
   /**
@@ -344,20 +384,246 @@ export class ZoomData {
     if (!this.canvas || !this.config) return;
 
     // Convert screen coordinates to image pixel coordinates
-    const rect   = this.canvas.getBoundingClientRect();
+    const rect = this.canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
-    const scale  = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
+    const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
 
     // Clamp to image bounds
-    this.crosshairImageX = Math.max(0, Math.min(this.config.imageSize.Width  - 1, (mouseX - this.xPos) * scale));
+    this.crosshairImageX = Math.max(0, Math.min(this.config.imageSize.Width - 1, (mouseX - this.xPos) * scale));
     this.crosshairImageY = Math.max(0, Math.min(this.config.imageSize.Height - 1, (mouseY - this.yPos) * scale));
+
 
     if (this.onCrosshairChange) {
       this.onCrosshairChange(this.crosshairImageX, this.crosshairImageY);
     }
 
     this.scheduleRender();
+    this.updateLineScanPanels();
+
+  }
+
+  //  *******************Line scan extraction *********************
+
+  /**
+   * Extract a horizontal scan line at the given image Y coordinate.
+   * Walks the tile cache from the highest available zoom level downward
+   * and assembles the full row from cached tiles.
+   * Returns null if no suitable tiles are available yet.
+   */
+  extractHorizontalScan(imageY: number): { values: Float32Array; positions: Float32Array } | null {
+    if (!this.config || !this.tiledImage) return null;
+
+    const maxLevel = this.config.maxZoomLevel;
+    const tileSize = this.config.tileSize;
+    // Access the tile cache via the TiledImage instance
+    const cache = (this.tiledImage as any).tileCache as TileCache;
+
+    // Try each zoom level from highest detail to lowest
+    const startLevel = Math.round(this.zoomLevel);
+    for (let level = startLevel; level >= 0; level--) {
+      const scaleFactor = Math.pow(2, maxLevel - level);  // image pixels per tile pixel at this level
+      const numCols = this.config.getNumColumns(level);
+      const tileRow = Math.floor(imageY / scaleFactor / tileSize);
+
+      // Check that all tiles in this row are ready
+      // let allReady = true;
+      // for (let col = 0; col < numCols; col++) {
+      //   const tile = cache.get(TileCache.makeKey(level, tileRow, col));
+        // if (!tile || !tile.isReady()) { allReady = false; break; }
+      // }
+      // if (!allReady) continue;
+
+      // Assemble the scan line from all tiles in the row
+      const pixelY = Math.floor(imageY / scaleFactor);
+      const chunks: number[][] = [];
+      const posChunks: number[][] = [];  
+
+      for (let col = 0; col < numCols; col++) {
+        const tile = cache.get(TileCache.makeKey(level, tileRow, col));
+        if (!tile || !tile.isReady()) continue;
+        const data = tile.getData();
+        if (!data) continue;
+        const xCoords = tile.getXCoords();
+        if (!xCoords) continue;
+        const localY = Math.max(0, Math.min(tile.height - 1, pixelY - tileRow * tileSize));
+        const chunk: number[] = [];
+        const posChunk: number[] = [];
+        for (let x = 0; x < tile.width; x++) {
+          chunk.push(data[localY * tile.width + x]);
+          posChunk.push(xCoords[x]);  
+        }
+        chunks.push(chunk);
+        posChunks.push(posChunk);
+      }
+
+      const total = chunks.reduce((s, c) => s + c.length, 0);
+      const result = new Float32Array(total);
+      const positions = new Float32Array(total);
+      let idx = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        for (let j = 0; j < chunks[i].length; j++) {
+          result[idx] = chunks[i][j];
+          positions[idx] = posChunks[i][j];
+          idx++;
+        }
+      }  
+      return { values: result, positions };
+    }
+
+    return null;  // no level had all tiles ready
+  }
+
+  /**
+   * Extract a vertical scan line at the given image X coordinate.
+   * Mirrors extractHorizontalScan but walks down a column of tiles.
+   */
+  extractVerticalScan(imageX: number): { values: Float32Array; positions: Float32Array } | null {
+    if (!this.config || !this.tiledImage) return null;
+
+    const maxLevel = this.config.maxZoomLevel;
+    const tileSize = this.config.tileSize;
+    const cache = (this.tiledImage as any).tileCache as TileCache;
+
+    const startLevel = Math.round(this.zoomLevel);
+    for (let level = startLevel; level >= 0; level--) {
+      const scaleFactor = Math.pow(2, maxLevel - level);
+      const numRows = this.config.getNumRows(level);
+      const tileCol = Math.floor(imageX / scaleFactor / tileSize);
+
+      // Check that all tiles in this column are ready
+      // let allReady = true;
+      // for (let row = 0; row < numRows; row++) {
+      //   const tile = cache.get(TileCache.makeKey(level, row, tileCol));
+      //   if (!tile || !tile.isReady()) { allReady = false; break; }
+      // }
+      // if (!allReady) continue;
+
+      // Assemble the scan line from all tiles in the column
+      const pixelX = Math.floor(imageX / scaleFactor);
+      const chunks: number[][] = [];
+      const posChunks: number[][] = [];
+
+      for (let row = 0; row < numRows; row++) {
+        const tile = cache.get(TileCache.makeKey(level, row, tileCol));
+        if (!tile || !tile.isReady()) continue;
+        const data = tile.getData();
+        if (!data) continue;
+        const yCoords = tile.getYCoords();
+        if (!yCoords) continue;
+        const localX = Math.max(0, Math.min(tile.width - 1, pixelX - tileCol * tileSize));
+        const chunk: number[] = [];
+        const posChunk: number[] = [];
+        for (let y = 0; y < tile.height; y++) {
+          chunk.push(data[y * tile.width + localX]);
+          posChunk.push(yCoords[y]);
+        }
+        chunks.push(chunk);
+        posChunks.push(posChunk);
+      }
+
+      const total = chunks.reduce((s, c) => s + c.length, 0);
+      const result = new Float32Array(total);
+      const positions = new Float32Array(total);
+      let idx = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        for (let j = 0; j < chunks[i].length; j++) {
+          result[idx] = chunks[i][j];
+          positions[idx] = posChunks[i][j];
+          idx++;
+        }
+      }
+      return { values: result, positions };
+    }
+
+    return null;  // no level had all tiles ready
+  }
+
+  /**
+   * Rebuild both line scan panels from the current crosshair position.
+   * Called after double-click and whenever new tiles arrive.
+   */
+  updateLineScanPanels(): void {
+    if (this.crosshairImageX === null || this.crosshairImageY === null) return;
+    if (!this.config) return;
+
+    const imageWidth = this.config.imageSize.Width;
+    const imageHeight = this.config.imageSize.Height;
+
+    // Convert image pixels to physical micro meters using pixels-per-meter metadata
+    const ppmW = this.config.pixelsPerMeter?.Width    // px/m
+    const ppmH = this.config.pixelsPerMeter?.Height  // px/m
+    // const physW_um = (imageWidth / ppmW) * 1e6;   // total physical width in micro meters
+    // const physH_um = (imageHeight / ppmH) * 1e6;   // total physical height in micro meters
+    
+    const crossX_um = (this.crosshairImageX / ppmW) * 1e6;   // tells the renderer where to draw the vertical line indicating the crosshair position
+    const crossY_um = (this.crosshairImageY / ppmH) * 1e6;
+
+    // const physPos = this.imagePixelToPhysicalUm(this.crosshairImageX, this.crosshairImageY);
+    // if (!physPos) return;
+    // const { x_um: crossX_um, y_um: crossY_um } = physPos;
+
+
+    // Helper: convert normalised [0,1] data to physical height values using colorbar range 
+    const colorbarMin = this.config.colorbarRange?.Minimum 
+    const colorbarMax = this.config.colorbarRange?.Maximum
+    const toPhys = (norm: number) => norm * (colorbarMax - colorbarMin) + colorbarMin;  // converts the normalised values in the netCDF tiles to physical units 
+
+    const valueAxisLabel = `${this.config.colorbarTitle ?? 'Height'}`;
+
+    // **************** Horizontal scan panel*****************************
+    if (this.hScanRenderer) {
+          const hScan = this.extractHorizontalScan(this.crosshairImageY);
+          if (hScan && hScan.values.length > 0) {
+            const { values: raw, positions } = hScan;
+            const n = raw.length;
+            const physValues = new Float32Array(n);
+            for (let i = 0; i < n; i++) {
+              physValues[i] = toPhys(raw[i]);
+            }
+        const scanData: LineScanData = {
+          values: physValues, 
+          positions:positions,
+          crosshairPos: crossX_um,
+          posMin: positions[0], posMax: positions[positions.length - 1],  
+          posAxisLabel: 'x-position',
+          valueAxisLabel,
+          orientation: 'horizontal',
+          valueMin: colorbarMin,
+          valueMax: colorbarMax,
+        };
+        this.hScanRenderer.draw(scanData);
+      } else {
+        this.hScanRenderer.drawEmpty();
+      }
+    }
+
+    // *********** Vertical scan panel ****************************
+    if (this.vScanRenderer) {
+          const vScan = this.extractVerticalScan(this.crosshairImageX);
+          if (vScan && vScan.values.length > 0) {
+            const { values: raw, positions } = vScan;
+            const n = raw.length;
+            const physValues = new Float32Array(n);
+            for (let i = 0; i < n; i++) {
+              physValues[i] = toPhys(raw[i]);
+            }
+        const scanData: LineScanData = {
+          values: physValues, 
+          positions: positions,
+          crosshairPos: crossY_um,
+          posMin: positions[0], posMax: positions[positions.length - 1],
+          posAxisLabel: 'y-position',
+          valueAxisLabel,
+          orientation: 'vertical',
+          valueMin: colorbarMin,
+          valueMax: colorbarMax,
+        };
+        this.vScanRenderer.draw(scanData);
+      } else {
+        this.vScanRenderer.drawEmpty();
+      }
+    }
   }
 
   /**
@@ -367,6 +633,7 @@ export class ZoomData {
     this.crosshairImageX = null;
     this.crosshairImageY = null;
 
+
     // Clear the overlay canvas
     if (this.canvas?.id) {
       const overlay = document.getElementById(this.canvas.id + '-crosshair') as HTMLCanvasElement | null;
@@ -374,7 +641,8 @@ export class ZoomData {
         overlay.getContext('2d')?.clearRect(0, 0, overlay.width, overlay.height);
       }
     }
-
+    this.hScanRenderer?.drawEmpty();
+    this.vScanRenderer?.drawEmpty();
     this.scheduleRender();
   }
 
@@ -479,12 +747,15 @@ export class ZoomData {
   // }
 
   resetView(): void {
-  if (!this.canvas || !this.config) return;
+    if (!this.canvas || !this.config) return;
 
-  this.zoomLevel = this.computeFitZoomLevel();
-  this.centerImage();
-  this.scheduleRender();
-}
+    this.zoomLevel = this.computeFitZoomLevel();
+    this.centerImage();
+    this.scheduleRender();
+    if (this.crosshairImageX !== null && this.crosshairImageY !== null) {
+    this.updateLineScanPanels();
+  }
+  }
 
   /**
    * Update the color mapping range
@@ -512,40 +783,40 @@ export class ZoomData {
     this.scheduleRender();
   }
 
-private computeFitZoomLevel(): number {
-  if (!this.canvas || !this.config) return 0;
+  private computeFitZoomLevel(): number {
+    if (!this.canvas || !this.config) return 0;
 
-  const imageWidth = this.config.imageSize.Width;
-  const imageHeight = this.config.imageSize.Height;
+    const imageWidth = this.config.imageSize.Width;
+    const imageHeight = this.config.imageSize.Height;
 
-  const canvasWidth = this.canvas.width;
-  const canvasHeight = this.canvas.height;
+    const canvasWidth = this.canvas.width;
+    const canvasHeight = this.canvas.height;
 
-  const requiredScale = Math.max(
-    imageWidth / canvasWidth,
-    imageHeight / canvasHeight
-  );
+    const requiredScale = Math.max(
+      imageWidth / canvasWidth,
+      imageHeight / canvasHeight
+    );
 
-  const maxZoom = this.config.maxZoomLevel;
+    const maxZoom = this.config.maxZoomLevel;
 
-  const zoomLevel = maxZoom - Math.log2(requiredScale);
+    const zoomLevel = maxZoom - Math.log2(requiredScale);
 
-  return this.config.clampZoomLevel(zoomLevel);
-}
+    return this.config.clampZoomLevel(zoomLevel);
+  }
 
-private centerImage(): void {
-  if (!this.canvas || !this.config) return;
+  private centerImage(): void {
+    if (!this.canvas || !this.config) return;
 
-  const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
+    const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
 
-  const imageWidth = this.config.imageSize.Width;
-  const imageHeight = this.config.imageSize.Height;
+    const imageWidth = this.config.imageSize.Width;
+    const imageHeight = this.config.imageSize.Height;
 
-  const scaledWidth = imageWidth / scale;
-  const scaledHeight = imageHeight / scale;
+    const scaledWidth = imageWidth / scale;
+    const scaledHeight = imageHeight / scale;
 
-  this.xPos = (this.canvas.width - scaledWidth) / 2;
-  this.yPos = (this.canvas.height - scaledHeight) / 2;
-}
+    this.xPos = (this.canvas.width - scaledWidth) / 2;
+    this.yPos = (this.canvas.height - scaledHeight) / 2;
+  }
 
 }
