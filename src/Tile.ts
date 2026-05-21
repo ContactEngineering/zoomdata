@@ -168,8 +168,6 @@ export class Tile {
   clearCache(): void {
     this.data = null;
     this.fetchPromise = null;
-    if (this.state === TileState.Ready) {
-      this.state = TileState.Pending;
-    }
+    this.state = TileState.Pending;
   }
 }
