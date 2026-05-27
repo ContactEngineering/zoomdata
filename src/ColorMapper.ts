@@ -56,7 +56,7 @@ export class ColorMapper {
   render(data: ArrayLike<number>, width: number, height: number): OffscreenCanvas {
     if (data.length !== width * height) {
       throw new Error(
-        `ColorMapper.render: data length (${data.length}) does not match dimensions (${width}x${height}=${width * height})`
+        `ColorMapper.render: data length (${data.length}) does not match dimensions (${width}x${height}=${width * height})`,
       );
     }
 

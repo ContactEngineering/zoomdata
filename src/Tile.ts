@@ -56,7 +56,7 @@ export class Tile {
   }
 
   /** get the x coordinates and y coordinates in micrometers */
-  
+
   getXCoords(): Float32Array | null {
     return this.xCoords;
   }
@@ -107,16 +107,15 @@ export class Tile {
         throw new Error('NetCDF file missing "heights" variable');
       }
 
-      const x = reader.getDataVariable('x')  // x and y values 
+      const x = reader.getDataVariable('x'); // x and y values
       if (!x) {
         throw new Error('NetCDF file missing "x" variable');
       }
-      const y = reader.getDataVariable('y')
+      const y = reader.getDataVariable('y');
       if (!y) {
         throw new Error('NetCDF file missing "y" variable');
-      }  
+      }
 
-      
       // Get dimensions from the heights variable itself
       const heightsVar = reader.variables.find((v) => v.name === 'heights');
       if (!heightsVar) {
@@ -165,10 +164,14 @@ export class Tile {
       // Debug: verify dimensions match data length
       const expectedLength = this.width * this.height;
       if (this.data.length !== expectedLength) {
-        console.error(`Tile ${this.url}: dimension mismatch! width=${this.width}, height=${this.height}, expected=${expectedLength}, actual=${this.data.length}`);
+        console.error(
+          `Tile ${this.url}: dimension mismatch! width=${this.width}, height=${this.height}, expected=${expectedLength}, actual=${this.data.length}`,
+        );
         console.error(`  varDimensions:`, varDimensions);
       } else {
-        console.log(`Tile ${this.url}: loaded ${this.width}x${this.height} = ${this.data.length} values`);
+        console.log(
+          `Tile ${this.url}: loaded ${this.width}x${this.height} = ${this.data.length} values`,
+        );
       }
 
       this.state = TileState.Ready;
@@ -179,8 +182,7 @@ export class Tile {
       throw this.error;
     }
 
-
-    console.log("X coords:", this.xCoords, "Y coords:", this.yCoords);
+    console.log('X coords:', this.xCoords, 'Y coords:', this.yCoords);
   }
 
   /**

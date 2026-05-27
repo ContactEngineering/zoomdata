@@ -17,7 +17,7 @@ export default defineConfig({
       external: ['netcdfjs'],
       output: {
         globals: {
-          'netcdfjs': 'NetCDFJS',
+          netcdfjs: 'NetCDFJS',
         },
       },
     },

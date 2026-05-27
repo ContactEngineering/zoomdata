@@ -5,7 +5,7 @@ import { ColorMapper } from './ColorMapper';
 // In the DataView.setUint32 call (little-endian), 0xAABBGGRR maps to bytes [RR, GG, BB, AA].
 // palette[0] = 0xFF0000FF → bytes [0xFF, 0x00, 0x00, 0xFF] (red, full alpha)
 // palette[1] = 0x0000FFFF → bytes [0xFF, 0xFF, 0x00, 0x00] (blue, full alpha)
-const RED_BLUE_PALETTE = [0xFF0000FF, 0x0000FFFF];
+const RED_BLUE_PALETTE = [0xff0000ff, 0x0000ffff];
 
 // Checks whether the test environment's OffscreenCanvas supports real pixel round-trips.
 // happy-dom stubs canvas but doesn't do actual pixel rendering, so we skip
@@ -32,11 +32,15 @@ describe('ColorMapper', () => {
     });
 
     it('throws when minValue equals maxValue', () => {
-      expect(() => new ColorMapper(RED_BLUE_PALETTE, 5, 5)).toThrow('minValue must be less than maxValue');
+      expect(() => new ColorMapper(RED_BLUE_PALETTE, 5, 5)).toThrow(
+        'minValue must be less than maxValue',
+      );
     });
 
     it('throws when minValue is greater than maxValue', () => {
-      expect(() => new ColorMapper(RED_BLUE_PALETTE, 10, 5)).toThrow('minValue must be less than maxValue');
+      expect(() => new ColorMapper(RED_BLUE_PALETTE, 10, 5)).toThrow(
+        'minValue must be less than maxValue',
+      );
     });
 
     it('accepts negative value ranges', () => {
@@ -44,7 +48,7 @@ describe('ColorMapper', () => {
     });
 
     it('accepts a single-entry palette', () => {
-      expect(() => new ColorMapper([0xFF0000FF], 0, 1)).not.toThrow();
+      expect(() => new ColorMapper([0xff0000ff], 0, 1)).not.toThrow();
     });
   });
 
@@ -80,7 +84,9 @@ describe('ColorMapper', () => {
   describe('render()', () => {
     it('throws when data length does not match width * height', () => {
       const cm = new ColorMapper(RED_BLUE_PALETTE, 0, 1);
-      expect(() => cm.render(new Float32Array([1, 2, 3]), 2, 2)).toThrow('does not match dimensions');
+      expect(() => cm.render(new Float32Array([1, 2, 3]), 2, 2)).toThrow(
+        'does not match dimensions',
+      );
     });
 
     it('returns an OffscreenCanvas with the correct dimensions', () => {
@@ -107,41 +113,44 @@ describe('ColorMapper', () => {
     // performing actual pixel operations, so these are skipped there.
 
     it.skipIf(!pixelReadbackAvailable)('maps minValue to the first palette color', () => {
-      const cm = new ColorMapper([0xFF0000FF, 0x0000FFFF], 0, 1);
+      const cm = new ColorMapper([0xff0000ff, 0x0000ffff], 0, 1);
       const canvas = cm.render(new Float32Array([0]), 1, 1);
       const data = canvas.getContext('2d')!.getImageData(0, 0, 1, 1).data;
       // 0xFF0000FF little-endian → bytes [0xFF, 0x00, 0x00, 0xFF]
-      expect(data[0]).toBe(0xFF);
+      expect(data[0]).toBe(0xff);
       expect(data[1]).toBe(0x00);
       expect(data[2]).toBe(0x00);
-      expect(data[3]).toBe(0xFF);
+      expect(data[3]).toBe(0xff);
     });
 
     it.skipIf(!pixelReadbackAvailable)('maps maxValue to the last palette color', () => {
-      const cm = new ColorMapper([0xFF0000FF, 0x0000FFFF], 0, 1);
+      const cm = new ColorMapper([0xff0000ff, 0x0000ffff], 0, 1);
       const canvas = cm.render(new Float32Array([1]), 1, 1);
       const data = canvas.getContext('2d')!.getImageData(0, 0, 1, 1).data;
       // 0x0000FFFF little-endian → bytes [0xFF, 0xFF, 0x00, 0x00]
-      expect(data[0]).toBe(0xFF);
-      expect(data[1]).toBe(0xFF);
+      expect(data[0]).toBe(0xff);
+      expect(data[1]).toBe(0xff);
       expect(data[2]).toBe(0x00);
       expect(data[3]).toBe(0x00);
     });
 
-    it.skipIf(!pixelReadbackAvailable)('clamps values below minValue to first palette entry', () => {
-      const cm = new ColorMapper([0xFF0000FF, 0x0000FFFF], 0, 1);
-      const canvas = cm.render(new Float32Array([-999]), 1, 1);
-      const data = canvas.getContext('2d')!.getImageData(0, 0, 1, 1).data;
-      expect(data[0]).toBe(0xFF); // same as minValue color
-      expect(data[1]).toBe(0x00);
-    });
+    it.skipIf(!pixelReadbackAvailable)(
+      'clamps values below minValue to first palette entry',
+      () => {
+        const cm = new ColorMapper([0xff0000ff, 0x0000ffff], 0, 1);
+        const canvas = cm.render(new Float32Array([-999]), 1, 1);
+        const data = canvas.getContext('2d')!.getImageData(0, 0, 1, 1).data;
+        expect(data[0]).toBe(0xff); // same as minValue color
+        expect(data[1]).toBe(0x00);
+      },
+    );
 
     it.skipIf(!pixelReadbackAvailable)('clamps values above maxValue to last palette entry', () => {
-      const cm = new ColorMapper([0xFF0000FF, 0x0000FFFF], 0, 1);
+      const cm = new ColorMapper([0xff0000ff, 0x0000ffff], 0, 1);
       const canvas = cm.render(new Float32Array([999]), 1, 1);
       const data = canvas.getContext('2d')!.getImageData(0, 0, 1, 1).data;
-      expect(data[0]).toBe(0xFF); // same as maxValue color
-      expect(data[1]).toBe(0xFF);
+      expect(data[0]).toBe(0xff); // same as maxValue color
+      expect(data[1]).toBe(0xff);
     });
   });
 });

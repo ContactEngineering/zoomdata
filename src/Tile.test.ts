@@ -14,7 +14,10 @@ function setupSuccessfulNetCDF(data: number[], rows: number, cols: number): void
     return {
       getDataVariable: () => data,
       variables: [{ name: 'heights', dimensions: [0, 1] }],
-      dimensions: [{ name: 'row', size: rows }, { name: 'col', size: cols }],
+      dimensions: [
+        { name: 'row', size: rows },
+        { name: 'col', size: cols },
+      ],
     };
   } as unknown as () => NetCDFReader);
 }
@@ -150,7 +153,7 @@ describe('Tile', () => {
         return { getDataVariable: () => null, variables: [], dimensions: [] };
       } as unknown as () => NetCDFReader);
       await expect(new Tile('http://example.com/tile.nc').fetch()).rejects.toThrow(
-        'missing "heights" variable'
+        'missing "heights" variable',
       );
     });
 
@@ -163,7 +166,7 @@ describe('Tile', () => {
         };
       } as unknown as () => NetCDFReader);
       await expect(new Tile('http://example.com/tile.nc').fetch()).rejects.toThrow(
-        'missing "heights" variable metadata'
+        'missing "heights" variable metadata',
       );
     });
 
@@ -176,7 +179,7 @@ describe('Tile', () => {
         };
       } as unknown as () => NetCDFReader);
       await expect(new Tile('http://example.com/tile.nc').fetch()).rejects.toThrow(
-        'Expected 2D heights variable'
+        'Expected 2D heights variable',
       );
     });
   });

@@ -104,23 +104,9 @@ export class WebGLRenderer {
     this.maxValueLocation = gl.getUniformLocation(this.program, 'u_maxValue')!;
 
     // Create buffers for a unit quad
-    this.positionBuffer = this.createBuffer(new Float32Array([
-      0, 0,
-      1, 0,
-      0, 1,
-      0, 1,
-      1, 0,
-      1, 1,
-    ]));
+    this.positionBuffer = this.createBuffer(new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]));
 
-    this.texCoordBuffer = this.createBuffer(new Float32Array([
-      0, 0,
-      1, 0,
-      0, 1,
-      0, 1,
-      1, 0,
-      1, 1,
-    ]));
+    this.texCoordBuffer = this.createBuffer(new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]));
 
     // Create palette texture
     this.paletteTexture = this.createPaletteTexture(palette);
@@ -207,10 +193,10 @@ export class WebGLRenderer {
     const rgba = new Uint8Array(palette.length * 4);
     for (let i = 0; i < palette.length; i++) {
       const color = palette[i];
-      rgba[i * 4 + 0] = color & 0xff;           // R
-      rgba[i * 4 + 1] = (color >> 8) & 0xff;    // G
-      rgba[i * 4 + 2] = (color >> 16) & 0xff;   // B
-      rgba[i * 4 + 3] = (color >> 24) & 0xff;   // A
+      rgba[i * 4 + 0] = color & 0xff; // R
+      rgba[i * 4 + 1] = (color >> 8) & 0xff; // G
+      rgba[i * 4 + 2] = (color >> 16) & 0xff; // B
+      rgba[i * 4 + 3] = (color >> 24) & 0xff; // A
     }
 
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -233,12 +219,16 @@ export class WebGLRenderer {
       throw new Error('Failed to create tile texture');
     }
 
-    console.log(`createTileTexture: input width=${width}, height=${height}, data.length=${data.length}`);
+    console.log(
+      `createTileTexture: input width=${width}, height=${height}, data.length=${data.length}`,
+    );
 
     // Validate dimensions match data length
     const expectedSize = width * height;
     if (data.length !== expectedSize) {
-      console.error(`Tile data length (${data.length}) doesn't match dimensions (${width}x${height}=${expectedSize})`);
+      console.error(
+        `Tile data length (${data.length}) doesn't match dimensions (${width}x${height}=${expectedSize})`,
+      );
       // Adjust dimensions to match actual data if possible
       if (data.length > 0) {
         // Try to infer square dimensions, or use data length as width with height=1
@@ -255,11 +245,14 @@ export class WebGLRenderer {
       }
     }
 
-    console.log(`  Final texture dimensions: ${width}x${height}, luminance.length will be ${data.length}`);
+    console.log(
+      `  Final texture dimensions: ${width}x${height}, luminance.length will be ${data.length}`,
+    );
     console.log(`  Normalization range: minValue=${this.minValue}, maxValue=${this.maxValue}`);
 
     // Debug: check actual data range
-    let dataMin = Infinity, dataMax = -Infinity;
+    let dataMin = Infinity,
+      dataMax = -Infinity;
     for (let i = 0; i < data.length; i++) {
       if (data[i] < dataMin) dataMin = data[i];
       if (data[i] > dataMax) dataMax = data[i];
@@ -279,7 +272,8 @@ export class WebGLRenderer {
     }
 
     // Debug: check luminance range
-    let lumMin = 255, lumMax = 0;
+    let lumMin = 255,
+      lumMax = 0;
     for (let i = 0; i < luminance.length; i++) {
       if (luminance[i] < lumMin) lumMin = luminance[i];
       if (luminance[i] > lumMax) lumMax = luminance[i];
@@ -288,12 +282,24 @@ export class WebGLRenderer {
 
     // Set pixel store alignment to 1 byte (default is 4) to handle non-power-of-2 textures
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, width, height, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, luminance);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.LUMINANCE,
+      width,
+      height,
+      0,
+      gl.LUMINANCE,
+      gl.UNSIGNED_BYTE,
+      luminance,
+    );
 
     // Check for WebGL errors
     const error = gl.getError();
     if (error !== gl.NO_ERROR) {
-      console.error(`WebGL error after texImage2D: ${error}, width=${width}, height=${height}, luminance.length=${luminance.length}`);
+      console.error(
+        `WebGL error after texImage2D: ${error}, width=${width}, height=${height}, luminance.length=${luminance.length}`,
+      );
     }
 
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -354,13 +360,7 @@ export class WebGLRenderer {
   /**
    * Render a tile at the specified position and size
    */
-  renderTile(
-    tileTexture: TileTexture,
-    x: number,
-    y: number,
-    width: number,
-    height: number
-  ): void {
+  renderTile(tileTexture: TileTexture, x: number, y: number, width: number, height: number): void {
     this.renderTileRegion(tileTexture, x, y, width, height, 0, 0, 1, 1);
   }
 
@@ -385,7 +385,7 @@ export class WebGLRenderer {
     texX: number,
     texY: number,
     texW: number,
-    texH: number
+    texH: number,
   ): void {
     const gl = this.gl;
 
@@ -397,8 +397,10 @@ export class WebGLRenderer {
     // Set translation and scale for this tile
     gl.uniform2f(this.translationLocation, x, y);
     gl.uniform2f(this.scaleLocation, width, height);
-    
-    console.log(`renderTileRegion: x=${x}, y=${y}, width=${width}, height=${height}, texX=${texX}, texY=${texY}, texW=${texW}, texH=${texH}`);
+
+    console.log(
+      `renderTileRegion: x=${x}, y=${y}, width=${width}, height=${height}, texX=${texX}, texY=${texY}, texW=${texW}, texH=${texH}`,
+    );
 
     // Set value range for color mapping
     // Note: For 8-bit luminance texture, the shader sees values in [0,1] already normalized
@@ -414,12 +416,18 @@ export class WebGLRenderer {
     const texRight = texX + texW;
     const texBottom = texY + texH;
     const texCoords = new Float32Array([
-      texX, texY,
-      texRight, texY,
-      texX, texBottom,
-      texX, texBottom,
-      texRight, texY,
-      texRight, texBottom,
+      texX,
+      texY,
+      texRight,
+      texY,
+      texX,
+      texBottom,
+      texX,
+      texBottom,
+      texRight,
+      texY,
+      texRight,
+      texBottom,
     ]);
 
     // Update texture coordinate buffer
