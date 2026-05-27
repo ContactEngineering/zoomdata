@@ -141,3 +141,7 @@ dist
 
 # Vite
 .vite/
+
+# Examples
+examples/**/*.json
+examples/**/dzdata_files/

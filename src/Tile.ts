@@ -130,14 +130,35 @@ export class Tile {
         throw new Error(`Expected 2D heights variable, got ${varDimensions.length}D`);
       }
 
-      // First dimension is rows (height), second is columns (width)
-      this.height = varDimensions[0].size;
-      this.width = varDimensions[1].size;
+      // We want an in-memory layout of data[y * width + x] (rows = y, cols = x)
+      // so the WebGL texture (uploaded as `width` × `height`) puts the x-axis
+      // horizontally on screen and y vertically. SurfaceTopography's NetCDF
+      // tiles store heights as (x, y) — first dim = x — so in that case we
+      // need to transpose into (y, x) layout. We detect this via the dim names.
+      const firstDimIsX = varDimensions[0].name === 'x' || varDimensions[0].name === 'column';
+      const raw = heights as number[];
 
-      // Store raw data as Float32Array
-      this.data = new Float32Array(heights as number[]);
+      if (firstDimIsX) {
+        // heights(x, y): first dim is x, second is y. Transpose to (y, x).
+        const xCount = varDimensions[0].size;
+        const yCount = varDimensions[1].size;
+        this.width = xCount;
+        this.height = yCount;
+        const transposed = new Float32Array(xCount * yCount);
+        for (let xi = 0; xi < xCount; xi++) {
+          for (let yi = 0; yi < yCount; yi++) {
+            transposed[yi * xCount + xi] = raw[xi * yCount + yi];
+          }
+        }
+        this.data = transposed;
+      } else {
+        // heights(y, x): first dim = y (rows), second = x (cols). Already in target layout.
+        this.height = varDimensions[0].size;
+        this.width = varDimensions[1].size;
+        this.data = new Float32Array(raw);
+      }
 
-      // Store x and y coordinates as Float32Arrays 
+      // Store x and y coordinates as Float32Arrays
       this.xCoords = new Float32Array(x as number[]);
       this.yCoords = new Float32Array(y as number[]);
 
