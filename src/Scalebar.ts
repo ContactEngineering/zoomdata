@@ -3,7 +3,6 @@ export class Scalebar {
   private label: HTMLDivElement;
 
   private perPixelWidth: number;
-  private perPixelHeight: number;
   private imagePixelWidth: number;
   private maxZoomLevel: number;
 
@@ -11,33 +10,29 @@ export class Scalebar {
     barId: string,
     labelId: string,
     perPixelWidth: number,
-    perPixelHeight: number,
     imagePixelWidth: number,
-    maxZoomLevel: number
+    maxZoomLevel: number,
   ) {
-    this.bar = document.getElementById(barId)   as HTMLDivElement;
+    this.bar = document.getElementById(barId) as HTMLDivElement;
     this.label = document.getElementById(labelId) as HTMLDivElement;
     this.perPixelWidth = perPixelWidth;
-    this.perPixelHeight = perPixelHeight;
     this.imagePixelWidth = imagePixelWidth;
-    this.maxZoomLevel    = maxZoomLevel;
+    this.maxZoomLevel = maxZoomLevel;
 
     if (!this.bar || !this.label) {
       throw new Error(`Scalebar: could not find elements #${barId} or #${labelId}`);
     }
   }
 
-  update(canvasWidthPx: number, zoomLevel: number): void {
-
+  update(zoomLevel: number): void {
     const scale = Math.pow(2, this.maxZoomLevel - zoomLevel);
     const imageScreenWidthPx = this.imagePixelWidth / scale;
 
-    const physicalWidthM  = this.imagePixelWidth / this.perPixelWidth;
-    const physicalWidthMm = physicalWidthM * 1000;   
-    
+    const physicalWidthM = this.imagePixelWidth / this.perPixelWidth;
+    const physicalWidthMm = physicalWidthM * 1000;
+
     const mmPerScreenPx = physicalWidthMm / imageScreenWidthPx; // how many mm does one screen pixel represent at the current zoom level
 
-    
     const targetBarMm = 100 * mmPerScreenPx; // how much mm would a 100px bar represent at the current zoom level. needed for scalebar
 
     // Round to a nice number
@@ -56,7 +51,7 @@ export class Scalebar {
       labelText = `${(niceMm * 1_000_000).toFixed(0)} nm`;
     }
 
-    this.bar.style.width   = `${barWidthPx}px`;
+    this.bar.style.width = `${barWidthPx}px`;
     this.label.textContent = labelText;
   }
 
@@ -65,7 +60,7 @@ export class Scalebar {
     const normalized = value / magnitude;
 
     let nice: number;
-    if      (normalized < 1.5) nice = 1;
+    if (normalized < 1.5) nice = 1;
     else if (normalized < 3.5) nice = 2;
     else if (normalized < 7.5) nice = 5;
     else nice = 10;

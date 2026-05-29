@@ -42,16 +42,20 @@ npm install
 The demo requires two servers running simultaneously:
 
 **Terminal 1 - Data Server** (serves NetCDF tile data with CORS headers):
+
 ```bash
 npm run serve-data
 # or directly: python cors_server.py
 ```
+
 This starts a Python HTTP server on port 8000 that serves the example data files.
 
 **Terminal 2 - Dev Server** (Vite dev server with hot reload):
+
 ```bash
 npm run dev
 ```
+
 This starts the Vite dev server on port 3000 and opens the demo in your browser.
 
 ### Building the Library
@@ -102,6 +106,7 @@ data/
 ### NetCDF Tile Format
 
 Each `.nc` file must contain:
+
 - A `heights` variable with the data values
 - `x` and `y` dimensions
 
@@ -131,14 +136,14 @@ const viewer = new ZoomData(options: ZoomDataOptions);
 
 #### Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `rootUrl` | `string` | required | URL where `dzdata.json` is located |
-| `colorPalette` | `number[]` | `Palettes.inferno(256)` | Color palette array |
-| `minValue` | `number` | `0.0` | Minimum data value |
-| `maxValue` | `number` | `1.0` | Maximum data value |
-| `zoomLevelIncrement` | `number` | `0.1` | Zoom change per scroll |
-| `debug` | `boolean` | `false` | Show tile borders |
+| Option               | Type       | Default                 | Description                        |
+| -------------------- | ---------- | ----------------------- | ---------------------------------- |
+| `rootUrl`            | `string`   | required                | URL where `dzdata.json` is located |
+| `colorPalette`       | `number[]` | `Palettes.inferno(256)` | Color palette array                |
+| `minValue`           | `number`   | `0.0`                   | Minimum data value                 |
+| `maxValue`           | `number`   | `1.0`                   | Maximum data value                 |
+| `zoomLevelIncrement` | `number`   | `0.1`                   | Zoom change per scroll             |
+| `debug`              | `boolean`  | `false`                 | Show tile borders                  |
 
 #### Methods
 
@@ -172,6 +177,7 @@ const palette4 = grayscale(64);
 ```
 
 Available palettes:
+
 - `inferno(n)` - Black to yellow through red (good for heat/intensity)
 - `viridis(n)` - Purple to yellow through green (colorblind-friendly)
 - `magma(n)` - Black to white through pink

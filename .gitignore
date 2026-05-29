@@ -52,6 +52,9 @@ build/Release
 node_modules/
 jspm_packages/
 
+# Python virtual environment
+venv/
+
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
@@ -141,3 +144,7 @@ dist
 
 # Vite
 .vite/
+
+# Examples
+examples/**/*.json
+examples/**/dzdata_files/

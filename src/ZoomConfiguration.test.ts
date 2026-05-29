@@ -14,12 +14,15 @@ const VALID_METADATA: DZIMetadata = {
 };
 
 function stubFetch(data: unknown, ok = true, status = 200): void {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-    ok,
-    status,
-    statusText: ok ? 'OK' : 'Not Found',
-    json: () => Promise.resolve(data),
-  }));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok,
+      status,
+      statusText: ok ? 'OK' : 'Not Found',
+      json: () => Promise.resolve(data),
+    }),
+  );
 }
 
 async function loadedConfig(rootUrl = 'http://example.com/data/'): Promise<ZoomConfiguration> {
@@ -73,7 +76,9 @@ describe('ZoomConfiguration', () => {
     });
 
     it('colorbarRange', () => {
-      expect(() => new ZoomConfiguration('http://example.com/').colorbarRange).toThrow('not loaded');
+      expect(() => new ZoomConfiguration('http://example.com/').colorbarRange).toThrow(
+        'not loaded',
+      );
     });
   });
 
@@ -136,7 +141,9 @@ describe('ZoomConfiguration', () => {
     });
 
     it('fetches from rootUrl + dzdata.json', async () => {
-      const spy = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(VALID_METADATA) });
+      const spy = vi
+        .fn()
+        .mockResolvedValue({ ok: true, json: () => Promise.resolve(VALID_METADATA) });
       vi.stubGlobal('fetch', spy);
       await new ZoomConfiguration('http://example.com/data/').fetch();
       expect(spy).toHaveBeenCalledWith('http://example.com/data/dzdata.json');
@@ -150,22 +157,30 @@ describe('ZoomConfiguration', () => {
 
     it('wraps HTTP errors', async () => {
       stubFetch({}, false, 404);
-      await expect(new ZoomConfiguration('http://example.com/').fetch()).rejects.toThrow('HTTP 404');
+      await expect(new ZoomConfiguration('http://example.com/').fetch()).rejects.toThrow(
+        'HTTP 404',
+      );
     });
 
     it('throws when Image field is missing', async () => {
       stubFetch({});
-      await expect(new ZoomConfiguration('http://example.com/').fetch()).rejects.toThrow('"Image" field');
+      await expect(new ZoomConfiguration('http://example.com/').fetch()).rejects.toThrow(
+        '"Image" field',
+      );
     });
 
     it('throws when Image.Size is missing', async () => {
       stubFetch({ Image: { TileSize: 256 } });
-      await expect(new ZoomConfiguration('http://example.com/').fetch()).rejects.toThrow('"Image.Size"');
+      await expect(new ZoomConfiguration('http://example.com/').fetch()).rejects.toThrow(
+        '"Image.Size"',
+      );
     });
 
     it('throws when Image.TileSize is missing', async () => {
       stubFetch({ Image: { Size: { Width: 256, Height: 256 } } });
-      await expect(new ZoomConfiguration('http://example.com/').fetch()).rejects.toThrow('"Image.TileSize"');
+      await expect(new ZoomConfiguration('http://example.com/').fetch()).rejects.toThrow(
+        '"Image.TileSize"',
+      );
     });
   });
 

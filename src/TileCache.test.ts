@@ -170,7 +170,10 @@ describe('TileCache', () => {
       const t2 = fakeTile();
       cache.set('a', t1);
       cache.set('b', t2);
-      expect([...cache.entries()]).toEqual([['a', t1], ['b', t2]]);
+      expect([...cache.entries()]).toEqual([
+        ['a', t1],
+        ['b', t2],
+      ]);
     });
 
     it('keys() yields all keys in insertion order', () => {

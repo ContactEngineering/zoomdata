@@ -79,12 +79,10 @@ export class ZoomConfiguration {
     return this._colorbarTitle ? this._colorbarTitle : 'Height';
   }
 
-
-
   /* Get the pixels per meter value */
   get pixelsPerMeter(): ImageSize {
     this.assertLoaded();
-    return this._pixelsPerMeter!; 
+    return this._pixelsPerMeter!;
   }
 
   /**
@@ -116,7 +114,11 @@ export class ZoomConfiguration {
       if (!data.Image) {
         throw new Error('Invalid dzdata.json: missing "Image" field');
       }
-      if (!data.Image.Size || typeof data.Image.Size.Width !== 'number' || typeof data.Image.Size.Height !== 'number') {
+      if (
+        !data.Image.Size ||
+        typeof data.Image.Size.Width !== 'number' ||
+        typeof data.Image.Size.Height !== 'number'
+      ) {
         throw new Error('Invalid dzdata.json: missing or invalid "Image.Size"');
       }
       if (typeof data.Image.TileSize !== 'number') {
@@ -127,7 +129,7 @@ export class ZoomConfiguration {
       this._tileSize = data.Image.TileSize;
       this._overlap = data.Image.Overlap ?? 0;
       this._colorbarRange = data.Image.ColorbarRange ?? null;
-      this._colorbarTitle = data.Image.ColorbarTitle ?? null; 
+      this._colorbarTitle = data.Image.ColorbarTitle ?? null;
       this._pixelsPerMeter = data.Image.PixelsPerMeter ?? null;
 
       // Calculate max zoom level based on DZI convention:
@@ -135,13 +137,17 @@ export class ZoomConfiguration {
       // - At level log2(tileSize), one tile covers tileSize pixels at 1:1 scale
       // - This is the "natural" max zoom level where scaleFactor = 1
       // Higher levels (if they exist in the data) show sub-pixel zoom
-      this._maxZoomLevel = Math.ceil(Math.log2(Math.max(this._imageSize!.Width, this._imageSize!.Height)));
+      this._maxZoomLevel = Math.ceil(
+        Math.log2(Math.max(this._imageSize!.Width, this._imageSize!.Height)),
+      );
 
       this._loaded = true;
       return this;
     } catch (err) {
       if (err instanceof Error) {
-        throw new Error(`Failed to load zoom configuration from ${url}: ${err.message}`);
+        throw new Error(`Failed to load zoom configuration from ${url}: ${err.message}`, {
+          cause: err,
+        });
       }
       throw err;
     }

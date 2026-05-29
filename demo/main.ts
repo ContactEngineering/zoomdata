@@ -2,11 +2,20 @@
  * Demo application for ZoomData
  */
 
-import { ZoomData, Palettes, inferno, viridis, magma, plasma, grayscale, Colorbar} from '../src/index';
+import {
+  ZoomData,
+  Palettes,
+  inferno,
+  viridis,
+  magma,
+  plasma,
+  grayscale,
+  Colorbar,
+} from '../src/index';
 
 import { Scalebar } from '../src/Scalebar';
 // Configuration - points to examples directory served by cors_server.py
-const DATA_URL = 'http://localhost:8000/examples/ramp/';
+const DATA_URL = 'http://localhost:8000/examples/synthetic_square4/';
 
 // Available colormaps
 const COLORMAPS: Record<string, (n: number) => number[]> = {
@@ -87,15 +96,15 @@ async function init(): Promise<void> {
     // Updating the scalebar on every zoom change
     const canvas = document.getElementById('zoomCanvas') as HTMLCanvasElement;
     if (scalebar && canvas) {
-      scalebar.update(canvas.width, level);
+      scalebar.update(level);
     }
-
   };
 
   // Set up crosshair change handler  updates the coordinate readout
   zoomData.onCrosshairChange = (imageX, imageY) => {
     updateCrosshairInfo(
-      imageX, imageY,
+      imageX,
+      imageY,
       zoomData.getPixelsPerMeterWidth(),
       zoomData.getPixelsPerMeterHeight(),
     );
@@ -125,10 +134,8 @@ async function init(): Promise<void> {
       // updating the scalebar after reset also
       const canvas = document.getElementById('zoomCanvas') as HTMLCanvasElement;
       if (scalebar && canvas) {
-        scalebar.update(canvas.width, zoomData.getZoomLevel());
+        scalebar.update(zoomData.getZoomLevel());
       }
-
-
     });
   }
 
@@ -143,34 +150,28 @@ async function init(): Promise<void> {
     });
   }
 
-  // Start rendering 
+  // Start rendering
   try {
     hideError();
     await zoomData.start('zoomCanvas', 'hScanCanvas', 'vScanCanvas');
     updateZoomDisplay(zoomData.getZoomLevel(), zoomData.getMaxZoomLevel());
 
-
     // console.log('maxZoomLevel:', zoomData.getMaxZoomLevel());
     // console.log('imageWidth:', zoomData.getImageWidth());
     // console.log('physicalWidth:', 1.0);
 
-
-    // initializing the scalebar 
+    // initializing the scalebar
 
     scalebar = new Scalebar(
       'scalebar-bar',
       'scalebar-label',
       zoomData.getPixelsPerMeterWidth(), // physical width in meters
-      zoomData.getPixelsPerMeterHeight(),  // physical height in meters
-      zoomData.getImageWidth(),      // full res pixel width
-      zoomData.getMaxZoomLevel()     // max zoom level
+      zoomData.getImageWidth(), // full res pixel width
+      zoomData.getMaxZoomLevel(), // max zoom level
     );
 
     // Initial scalebar render
-    const canvas = document.getElementById('zoomCanvas') as HTMLCanvasElement;
-    // console.log('canvas.width:', canvas.width);
-    // console.log('canvas.offsetWidth:', canvas.offsetWidth);
-    scalebar.update(canvas.width, zoomData.getZoomLevel());
+    scalebar.update(zoomData.getZoomLevel());
 
     const DISPLAY_MIN = zoomData.getMinColorBarRange();
     const DISPLAY_MAX = zoomData.getMaxColorBarRange();
@@ -190,8 +191,6 @@ async function init(): Promise<void> {
       });
       colorbar.render();
     }
-
-
   } catch (error) {
     // Error is already shown via onError callback
     console.error('Failed to start ZoomData:', error);

@@ -19,7 +19,7 @@ export interface DZIMetadata {
       Maximum: number;
     };
     ColorbarTitle?: string;
-    PixelsPerMeter?: ImageSize
+    PixelsPerMeter?: ImageSize;
   };
 }
 
@@ -68,8 +68,6 @@ export interface ViewportBounds {
 
 /** Callback for render completion */
 export type RenderCallback = () => void;
-
-
 
 export interface ColorbarRange {
   Minimum: number;

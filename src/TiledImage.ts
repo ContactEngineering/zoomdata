@@ -23,18 +23,27 @@ export class TiledImage {
    * @param config - The zoom configuration
    * @param maxCacheSize - Maximum number of tiles to cache (default: 100)
    */
-  constructor(
-    config: ZoomConfiguration,
-    maxCacheSize: number = 100
-  ) {
+  constructor(config: ZoomConfiguration, maxCacheSize: number = 100) {
     this.config = config;
     this.tileCache = new TileCache(maxCacheSize);
+    this.tileCache.onEvict = (key) => {
+      const texture = this.textureCache.get(key);
+      if (texture) {
+        this.renderer?.deleteTileTexture(texture);
+        this.textureCache.delete(key);
+      }
+    };
   }
 
   /**
    * Initialize the WebGL renderer for a canvas
    */
-  initRenderer(canvas: HTMLCanvasElement, palette: number[], minValue: number, maxValue: number): void {
+  initRenderer(
+    canvas: HTMLCanvasElement,
+    palette: number[],
+    minValue: number,
+    maxValue: number,
+  ): void {
     this.renderer = new WebGLRenderer(canvas, palette, minValue, maxValue);
   }
 
@@ -89,7 +98,9 @@ export class TiledImage {
     const data = tile.getData();
     if (!data) return null;
 
-    console.log(`getTileTexture ${cacheKey}: tile.width=${tile.width}, tile.height=${tile.height}, data.length=${data.length}`);
+    console.log(
+      `getTileTexture ${cacheKey}: tile.width=${tile.width}, tile.height=${tile.height}, data.length=${data.length}`,
+    );
     const texture = this.renderer.createTileTexture(data, tile.width, tile.height);
     this.textureCache.set(cacheKey, texture);
     return texture;
@@ -110,15 +121,18 @@ export class TiledImage {
 
     // Start fetching if not already
     if (tile.getState() === TileState.Pending) {
-      tile.fetch().then(() => {
-        if (this.onTilesLoaded) {
-          this.onTilesLoaded();
-        }
-      }).catch(() => {
-        if (this.onTilesLoaded) {
-          this.onTilesLoaded();
-        }
-      });
+      tile
+        .fetch()
+        .then(() => {
+          if (this.onTilesLoaded) {
+            this.onTilesLoaded();
+          }
+        })
+        .catch(() => {
+          if (this.onTilesLoaded) {
+            this.onTilesLoaded();
+          }
+        });
     }
 
     return tile;
@@ -134,8 +148,8 @@ export class TiledImage {
     x: number,
     y: number,
     // size: number
-    width: number, 
-    height: number
+    width: number,
+    height: number,
   ): boolean {
     if (!this.renderer) return false;
 
@@ -151,34 +165,27 @@ export class TiledImage {
         // console.log(`Rendering tile ${cacheKey} at (${x}, ${y}) size ${width}x${height}`);
         // this.renderer.renderTile(texture, x, y, width, height);
 
-
-
         // check for overlaps to make sure the tiles are correctly aligned.
-        const ov = this.config.overlap;  
+        const ov = this.config.overlap;
         const tileSize = this.config.tileSize;
 
-        const hasLeft = row > 0;  // overlap on left if not in first column
-        const hasTop  = col > 0;  // overlap on top if not in first row
+        const hasLeft = col > 0; // overlap on left if not in first column
+        const hasTop = row > 0; // overlap on top if not in first row
 
         const leftOverlap = hasLeft ? ov : 0;
-        const topOverlap  = hasTop  ? ov : 0;
+        const topOverlap = hasTop ? ov : 0;
 
-        
-        const availableW = texture.width  - leftOverlap;  
+        const availableW = texture.width - leftOverlap;
         const availableH = texture.height - topOverlap;
 
         const texX = leftOverlap / texture.width;
-        const texY = topOverlap  / texture.height;
+        const texY = topOverlap / texture.height;
         const texW = Math.min(tileSize, availableW) / texture.width; // clamping done to avoid sampling outside texture when overlaps are present
         const texH = Math.min(tileSize, availableH) / texture.height;
 
         console.log(`Rendering tile ${cacheKey} at (${x}, ${y}) size ${width}x${height}`);
 
-        this.renderer.renderTileRegion(
-          texture,
-          x, y, width, height,
-          texX, texY, texW, texH
-        );
+        this.renderer.renderTileRegion(texture, x, y, width, height, texX, texY, texW, texH);
         return true;
       }
     }
@@ -197,7 +204,8 @@ export class TiledImage {
     x: number,
     y: number,
     // size: number
-    width: number, height: number
+    width: number,
+    height: number,
   ): boolean {
     if (!this.renderer) return false;
 
@@ -217,7 +225,9 @@ export class TiledImage {
       const cacheKey = TileCache.makeKey(level, parentRow, parentCol);
       const tile = this.tileCache.get(cacheKey);
 
-      console.log(`  Looking for ${cacheKey}: ${tile ? (tile.isReady() ? 'READY' : 'loading') : 'not in cache'}`);
+      console.log(
+        `  Looking for ${cacheKey}: ${tile ? (tile.isReady() ? 'READY' : 'loading') : 'not in cache'}`,
+      );
 
       if (tile && tile.isReady()) {
         const texture = this.getTileTexture(tile, cacheKey);
@@ -228,18 +238,26 @@ export class TiledImage {
           const subRow = row % scale;
 
           // Texture coordinates for the quadrant
-          const texLeft = subRow / scale; 
-          const texTop = subCol / scale; 
+          const texLeft = subCol / scale;
+          const texTop = subRow / scale;
           const texSize = 1 / scale;
 
-          console.log(`  Using ${cacheKey} with tex coords (${texLeft}, ${texTop}, ${texSize}, ${texSize})`);
+          console.log(
+            `  Using ${cacheKey} with tex coords (${texLeft}, ${texTop}, ${texSize}, ${texSize})`,
+          );
 
           // Render just this portion of the parent texture
           this.renderer.renderTileRegion(
             texture,
             // x, y, size, size,
-            x, y, width, height,
-            texLeft, texTop, texSize, texSize
+            x,
+            y,
+            width,
+            height,
+            texLeft,
+            texTop,
+            texSize,
+            texSize,
           );
           return true;
         }
@@ -257,7 +275,7 @@ export class TiledImage {
     canvas: HTMLCanvasElement,
     xPos: number,
     yPos: number,
-    fractionalZoomLevel: number
+    fractionalZoomLevel: number,
   ): void {
     if (!this.renderer) {
       throw new Error('TiledImage.renderTo: renderer not initialized');
@@ -273,13 +291,15 @@ export class TiledImage {
 
     // Calculate number of tiles at this data zoom level
     const numColumns = Math.ceil(
-      this.config.imageSize.Width / (dataScaleFactor * this.config.tileSize)
+      this.config.imageSize.Width / (dataScaleFactor * this.config.tileSize),
     );
     const numRows = Math.ceil(
-      this.config.imageSize.Height / (dataScaleFactor * this.config.tileSize)
+      this.config.imageSize.Height / (dataScaleFactor * this.config.tileSize),
     );
 
-    console.log(`--- Render frame: zoomLevel=${fractionalZoomLevel.toFixed(2)}, dataZoomLevel=${dataZoomLevel}, tiles=${numColumns}x${numRows} ---`);
+    console.log(
+      `--- Render frame: zoomLevel=${fractionalZoomLevel.toFixed(2)}, dataZoomLevel=${dataZoomLevel}, tiles=${numColumns}x${numRows} ---`,
+    );
 
     // Calculate rendered tile size on screen
     const scaledTileSize = this.config.tileSize * (dataScaleFactor / displayScaleFactor);
@@ -287,16 +307,24 @@ export class TiledImage {
     // Render visible tiles
     for (let row = 0; row < numRows; row++) {
       for (let col = 0; col < numColumns; col++) {
-        console.log(`Processing tile (${dataZoomLevel}, ${row}, ${col})`,"position:", xPos, yPos, "scaledTileSize:", scaledTileSize);
-     
-  
-        const tileX = Math.round(xPos + row * scaledTileSize);
-        const tileY = Math.round(yPos + col * scaledTileSize);
-        const tileW = Math.round(xPos + (row + 1) * scaledTileSize) - tileX; // get actual pixel size to avoid gaps/overlaps due to rounding
-        const tileH = Math.round(yPos + (col + 1) * scaledTileSize) - tileY; 
+        console.log(
+          `Processing tile (${dataZoomLevel}, ${row}, ${col})`,
+          'position:',
+          xPos,
+          yPos,
+          'scaledTileSize:',
+          scaledTileSize,
+        );
+
+        const tileX = Math.round(xPos + col * scaledTileSize);
+        const tileY = Math.round(yPos + row * scaledTileSize);
+        const tileW = Math.round(xPos + (col + 1) * scaledTileSize) - tileX; // get actual pixel size to avoid gaps/overlaps due to rounding
+        const tileH = Math.round(yPos + (row + 1) * scaledTileSize) - tileY;
 
         // Skip tiles outside visible area
-        if (!this.isTileVisible(tileX, tileY, Math.max(tileW, tileH), canvas.width, canvas.height)) {
+        if (
+          !this.isTileVisible(tileX, tileY, Math.max(tileW, tileH), canvas.width, canvas.height)
+        ) {
           continue;
         }
 
@@ -316,13 +344,10 @@ export class TiledImage {
     tileY: number,
     tileSize: number,
     canvasWidth: number,
-    canvasHeight: number
+    canvasHeight: number,
   ): boolean {
     return (
-      tileX >= -tileSize &&
-      tileX <= canvasWidth &&
-      tileY >= -tileSize &&
-      tileY <= canvasHeight
+      tileX >= -tileSize && tileX <= canvasWidth && tileY >= -tileSize && tileY <= canvasHeight
     );
   }
 
@@ -344,6 +369,14 @@ export class TiledImage {
       }
     }
     this.textureCache.clear();
+  }
+
+  /**
+   * Look up a tile in the cache without triggering a fetch.
+   * Returns undefined if the tile is not currently cached.
+   */
+  getCachedTile(level: number, row: number, col: number): Tile | undefined {
+    return this.tileCache.get(TileCache.makeKey(level, row, col));
   }
 
   /**

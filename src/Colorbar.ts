@@ -17,8 +17,8 @@ export interface ColorbarOptions {
   fontFamily?: string;
   tickColor?: string;
   tickLength?: number;
-  tickLabelGap?: number;  
-  barThickness?: number;  /** Bar thickness in px (default: 24) */
+  tickLabelGap?: number;
+  barThickness?: number; /** Bar thickness in px (default: 24) */
 }
 
 export class Colorbar {
@@ -36,7 +36,6 @@ export class Colorbar {
   private tickLength: number;
   private tickLabelGap: number;
   private barThickness: number;
-  
 
   constructor(options: ColorbarOptions) {
     this.canvas = options.canvas;
@@ -50,13 +49,13 @@ export class Colorbar {
     this.title = options.title ?? '';
     this.numTicks = options.numTicks ?? 6;
     this.fontSize = options.fontSize ?? 12;
-    this.fontFamily = options.fontFamily ?? "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    this.fontFamily =
+      options.fontFamily ?? "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
     this.tickColor = options.tickColor ?? '#333';
     this.tickLength = options.tickLength ?? 6;
     this.tickLabelGap = options.tickLabelGap ?? 4;
     this.barThickness = options.barThickness ?? 24;
   }
-
 
   /**
    * Update the palette and re-render
@@ -82,8 +81,6 @@ export class Colorbar {
   render(): void {
     this.renderVertical();
   }
-
-  
 
   /**
    * Convert a palette entry (little-endian 0xAABBGGRR) to a CSS rgb() string
@@ -121,7 +118,10 @@ export class Colorbar {
     const ticks: number[] = [];
     for (let t = firstTick; t <= this.maxValue + niceStep * 1e-9; t += niceStep) {
       const rounded = Math.round(t / niceStep) * niceStep; // avoid floating-point drift
-      if (rounded >= this.minValue - niceStep * 1e-9 && rounded <= this.maxValue + niceStep * 1e-9) {
+      if (
+        rounded >= this.minValue - niceStep * 1e-9 &&
+        rounded <= this.maxValue + niceStep * 1e-9
+      ) {
         ticks.push(rounded);
       }
     }
@@ -140,7 +140,7 @@ export class Colorbar {
     return value.toFixed(decimals);
   }
 
-  // Rendering vertically 
+  // Rendering vertically
 
   private renderVertical(): void {
     const ctx = this.ctx;
@@ -230,7 +230,7 @@ export class Colorbar {
     // We sample the palette at each pixel row for accuracy
     for (let row = 0; row < h; row++) {
       // row=0 → top → maxValue; row=h-1 → bottom → minValue
-      const frac = 1 - row / (h - 1);
+      const frac = h > 1 ? 1 - row / (h - 1) : 1;
       const idx = Math.min(Math.floor(frac * (n - 1)), n - 1);
       ctx.fillStyle = this.paletteEntryToCss(this.palette[idx]);
       ctx.fillRect(x, y + row, w, 1);
