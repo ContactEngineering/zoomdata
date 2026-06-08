@@ -96,8 +96,17 @@ export class LineScanRenderer {
     // }
     // if (!isFinite(vMin)) { this.drawEmpty(); return; }
 
-    const vLo = data.valueMin;
-    const vHi = data.valueMax;
+    // Pad the value range by a small fraction so the trace never touches and gets cut off
+    // against the top/bottom frame. 
+    const VALUE_PAD_FRAC = 0.03;
+    const rawLo = data.valueMin;
+    const rawHi = data.valueMax;
+    const valuePad = (rawHi - rawLo) * VALUE_PAD_FRAC || 0.5;
+    const vLo = rawLo - valuePad;
+    const vHi = rawHi + valuePad;
+
+    // const vLo = data.valueMin;
+    // const vHi = data.valueMax;
 
     const posMin = data.posMin;
     const posMax = data.posMax;

@@ -350,6 +350,10 @@ export class ZoomData {
     this.yPos = event.clientY - rect.top - this.dragStartY;
 
     this.scheduleRender();
+    // Pan changes the visible window so the line scans must also be rescaled.
+    if (this.crosshairImageX !== null && this.crosshairImageY !== null) {
+      this.updateLineScanPanels();
+    }
   }
 
   /**
@@ -410,8 +414,23 @@ export class ZoomData {
    * Walks the tile cache from the highest available zoom level downward
    * and assembles the full row from cached tiles.
    * Returns null if no suitable tiles are available yet.
+   *
+   * @param imageY - image pixel Y of the scan row
+   * @param crosshairImageX - image pixel X of the crosshair, so we can read the tile xCoords at that position
+   * @param visImgX0 / visImgX1 - image pixel X of the left/right viewport edges,
    */
-  extractHorizontalScan(imageY: number): { values: Float32Array; positions: Float32Array } | null {
+  extractHorizontalScan(
+    imageY: number,
+    crosshairImageX: number,
+    visImgX0: number,
+    visImgX1: number,
+  ): {
+    values: Float32Array;
+    positions: Float32Array;
+    crosshairPos: number;
+    winMin: number;
+    winMax: number;
+  } | null {
     if (!this.config || !this.tiledImage) return null;
 
     const maxLevel = this.config.maxZoomLevel;
@@ -448,6 +467,7 @@ export class ZoomData {
       }
 
       const total = chunks.reduce((s, c) => s + c.length, 0);
+      if (total === 0) continue; // nothing cached at this level, try coarser
       const result = new Float32Array(total);
       const positions = new Float32Array(total);
       let idx = 0;
@@ -458,7 +478,37 @@ export class ZoomData {
           idx++;
         }
       }
-      return { values: result, positions };
+
+      // Resolve an image pixel X to a physical position by reading xCoords at its local pixel in whichever tile column contains it.
+
+      const imgW = this.config.imageSize.Width;
+      const resolveX = (imageX: number): number => {
+        const px = Math.floor(imageX / scaleFactor);
+        const tcol = Math.floor(px / tileSize);
+        const t = this.tiledImage!.getCachedTile(level, tileRow, tcol);
+        const xc = t?.getXCoords?.() ?? null;
+        if (t && t.isReady() && xc) {
+          const lx = Math.max(0, Math.min(t.width - 1, px - tcol * tileSize));
+          return xc[lx];
+        }
+        //Fallback to fractional position if tile is not cached 
+        const lo = positions[0];
+        const hi = positions[positions.length - 1];
+        const f = Math.max(0, Math.min(1, imageX / (imgW - 1)));
+        return lo + f * (hi - lo);
+      };
+
+      const crosshairPos = resolveX(crosshairImageX);
+      const e0 = resolveX(visImgX0);
+      const e1 = resolveX(visImgX1);
+
+      return {
+        values: result,
+        positions,
+        crosshairPos,
+        winMin: Math.min(e0, e1),
+        winMax: Math.max(e0, e1),
+      };
     }
 
     return null; // no level had all tiles ready
@@ -467,8 +517,20 @@ export class ZoomData {
   /**
    * Extract a vertical scan line at the given image X coordinate.
    * Mirrors extractHorizontalScan but walks down a column of tiles.
+   *
    */
-  extractVerticalScan(imageX: number): { values: Float32Array; positions: Float32Array } | null {
+  extractVerticalScan(
+    imageX: number,
+    crosshairImageY: number,
+    visImgY0: number,
+    visImgY1: number,
+  ): {
+    values: Float32Array;
+    positions: Float32Array;
+    crosshairPos: number;
+    winMin: number;
+    winMax: number;
+  } | null {
     if (!this.config || !this.tiledImage) return null;
 
     const maxLevel = this.config.maxZoomLevel;
@@ -504,6 +566,7 @@ export class ZoomData {
       }
 
       const total = chunks.reduce((s, c) => s + c.length, 0);
+      if (total === 0) continue;
       const result = new Float32Array(total);
       const positions = new Float32Array(total);
       let idx = 0;
@@ -514,7 +577,39 @@ export class ZoomData {
           idx++;
         }
       }
-      return { values: result, positions };
+
+      // Resolve an image pixel Y to a physical position via yCoords in the tile row containing it 
+
+      const imgH = this.config.imageSize.Height;
+      const resolveY = (imageY: number): number => {
+        const py = Math.floor(imageY / scaleFactor);
+        const trow = Math.floor(py / tileSize);
+        const t = this.tiledImage!.getCachedTile(level, trow, tileCol);
+        const yc = t?.getYCoords?.() ?? null;
+        if (t && t.isReady() && yc) {
+          const ly = Math.max(0, Math.min(t.height - 1, py - trow * tileSize));
+          return yc[ly];
+        }
+
+      // fraction fallback only if that tile isn't cached.
+        const lo = positions[0];
+        const hi = positions[positions.length - 1];
+        const f = Math.max(0, Math.min(1, imageY / (imgH - 1)));
+        console.log("fired")
+        return lo + f * (hi - lo);
+      };
+
+      const crosshairPos = resolveY(crosshairImageY);
+      const e0 = resolveY(visImgY0);
+      const e1 = resolveY(visImgY1);
+
+      return {
+        values: result,
+        positions,
+        crosshairPos,
+        winMin: Math.min(e0, e1),
+        winMax: Math.max(e0, e1),
+      };
     }
 
     return null; // no level had all tiles ready
@@ -528,15 +623,19 @@ export class ZoomData {
     if (this.crosshairImageX === null || this.crosshairImageY === null) return;
     if (!this.config) return;
 
-    // Convert image pixels to physical micro meters using pixels-per-meter metadata.
-    // If the metadata is absent, fall back to image pixel coordinates so the
-    // crosshair/line-scan positions remain finite numbers instead of NaN.
-    const ppmW = this.config.pixelsPerMeter?.Width; // px/m
-    const ppmH = this.config.pixelsPerMeter?.Height; // px/m
-    const xToPos = ppmW ? (px: number) => (px / ppmW) * 1e6 : (px: number) => px;
-    const yToPos = ppmH ? (px: number) => (px / ppmH) * 1e6 : (px: number) => px;
-    const crossX_um = xToPos(this.crosshairImageX);
-    const crossY_um = yToPos(this.crosshairImageY);
+    // ***** Visible viewport edges in image pixel coordinates *****
+    // We pass these to the extractors, which resolve them to physical positions using the same tile xCoords/yCoords as the trace. 
+    // This makes the panel window match exactly what is on screen
+    // clamping to the image bounds while panning is also done here
+    const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
+    const imgW = this.config.imageSize.Width;
+    const imgH = this.config.imageSize.Height;
+    const clampPx = (v: number, hi: number) => Math.max(0, Math.min(hi, v));
+
+    const visImgX0 = clampPx(-this.xPos * scale, imgW - 1); //(0-this.xPos) hence negative
+    const visImgX1 = clampPx((this.canvas!.width - this.xPos) * scale, imgW - 1);
+    const visImgY0 = clampPx(-this.yPos * scale, imgH - 1);
+    const visImgY1 = clampPx((this.canvas!.height - this.yPos) * scale, imgH - 1);
 
     // Helper: convert normalised [0,1] data to physical height values using colorbar range.
     // If the colorbar range is absent, pass the raw value through.
@@ -571,9 +670,14 @@ export class ZoomData {
 
     // **************** Horizontal scan panel*****************************
     if (this.hScanRenderer) {
-      const hScan = this.extractHorizontalScan(this.crosshairImageY);
+      const hScan = this.extractHorizontalScan(
+        this.crosshairImageY,
+        this.crosshairImageX,
+        visImgX0,
+        visImgX1,
+      );
       if (hScan && hScan.values.length > 0) {
-        const { values: raw, positions } = hScan;
+        const { values: raw, positions, crosshairPos, winMin, winMax } = hScan;
         const n = raw.length;
         const physValues = new Float32Array(n);
         for (let i = 0; i < n; i++) {
@@ -585,9 +689,9 @@ export class ZoomData {
         const scanData: LineScanData = {
           values: physValues,
           positions: positions,
-          crosshairPos: crossX_um,
-          posMin: positions[0],
-          posMax: positions[positions.length - 1],
+          crosshairPos,
+          posMin: winMin,
+          posMax: winMax,
           posAxisLabel: 'x-position',
           valueAxisLabel,
           orientation: 'horizontal',
@@ -602,9 +706,14 @@ export class ZoomData {
 
     // *********** Vertical scan panel ****************************
     if (this.vScanRenderer) {
-      const vScan = this.extractVerticalScan(this.crosshairImageX);
+      const vScan = this.extractVerticalScan(
+        this.crosshairImageX,
+        this.crosshairImageY,
+        visImgY0,
+        visImgY1,
+      );
       if (vScan && vScan.values.length > 0) {
-        const { values: raw, positions } = vScan;
+        const { values: raw, positions, crosshairPos, winMin, winMax } = vScan;
         const n = raw.length;
         const physValues = new Float32Array(n);
         for (let i = 0; i < n; i++) {
@@ -616,9 +725,9 @@ export class ZoomData {
         const scanData: LineScanData = {
           values: physValues,
           positions: positions,
-          crosshairPos: crossY_um,
-          posMin: positions[0],
-          posMax: positions[positions.length - 1],
+          crosshairPos,
+          posMin: winMin,
+          posMax: winMax,
           posAxisLabel: 'y-position',
           valueAxisLabel,
           orientation: 'vertical',
