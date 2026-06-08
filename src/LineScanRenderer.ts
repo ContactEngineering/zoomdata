@@ -97,7 +97,7 @@ export class LineScanRenderer {
     // if (!isFinite(vMin)) { this.drawEmpty(); return; }
 
     // Pad the value range by a small fraction so the trace never touches and gets cut off
-    // against the top/bottom frame. 
+    // against the top/bottom frame.
     const VALUE_PAD_FRAC = 0.03;
     const rawLo = data.valueMin;
     const rawHi = data.valueMax;

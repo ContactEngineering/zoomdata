@@ -491,7 +491,7 @@ export class ZoomData {
           const lx = Math.max(0, Math.min(t.width - 1, px - tcol * tileSize));
           return xc[lx];
         }
-        //Fallback to fractional position if tile is not cached 
+        //Fallback to fractional position if tile is not cached
         const lo = positions[0];
         const hi = positions[positions.length - 1];
         const f = Math.max(0, Math.min(1, imageX / (imgW - 1)));
@@ -578,7 +578,7 @@ export class ZoomData {
         }
       }
 
-      // Resolve an image pixel Y to a physical position via yCoords in the tile row containing it 
+      // Resolve an image pixel Y to a physical position via yCoords in the tile row containing it
 
       const imgH = this.config.imageSize.Height;
       const resolveY = (imageY: number): number => {
@@ -591,11 +591,11 @@ export class ZoomData {
           return yc[ly];
         }
 
-      // fraction fallback only if that tile isn't cached.
+        // fraction fallback only if that tile isn't cached.
         const lo = positions[0];
         const hi = positions[positions.length - 1];
         const f = Math.max(0, Math.min(1, imageY / (imgH - 1)));
-        console.log("fired")
+        console.log('fired');
         return lo + f * (hi - lo);
       };
 
@@ -624,7 +624,7 @@ export class ZoomData {
     if (!this.config) return;
 
     // ***** Visible viewport edges in image pixel coordinates *****
-    // We pass these to the extractors, which resolve them to physical positions using the same tile xCoords/yCoords as the trace. 
+    // We pass these to the extractors, which resolve them to physical positions using the same tile xCoords/yCoords as the trace.
     // This makes the panel window match exactly what is on screen
     // clamping to the image bounds while panning is also done here
     const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
