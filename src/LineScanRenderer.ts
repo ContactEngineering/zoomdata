@@ -27,15 +27,15 @@ export class LineScanRenderer {
   private PAD_BOTTOM = 38;
 
   // ***********Style ******************
-  private BG_COLOR = '#0f1117';
-  private TRACE_COLOR = '#5ee7c4';
-  private TRACE_GLOW_COLOR = 'rgba(94, 231, 196, 0.30)';
-  private CROSSHAIR_COLOR = 'rgba(255, 80, 80, 0.85)';
-  private EMPTY_TEXT_COLOR = '#2a3545';
-  private GRID_COLOR = '#1a2030';
-  private AXIS_COLOR = '#3a4555';
-  private TICK_COLOR = '#5a6880';
-  private LABEL_COLOR = '#7a8898';
+  private BG_COLOR = '#f5f5f5';
+  private TRACE_COLOR = '#1d9e75';
+  private TRACE_GLOW_COLOR = 'rgba(29, 158, 117, 0.22)';
+  private CROSSHAIR_COLOR = 'rgba(224, 80, 80, 0.85)';
+  private EMPTY_TEXT_COLOR = '#9aa3ad';
+  private GRID_COLOR = '#dcdcdc';
+  private AXIS_COLOR = '#b8bcc2';
+  private TICK_COLOR = '#555555';
+  private LABEL_COLOR = '#444444';
 
   constructor(canvas: HTMLCanvasElement) {
     // trying to get the 2d context for the canvas element so that we can draw

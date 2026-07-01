@@ -447,6 +447,10 @@ export class ZoomData {
       const pixelY = Math.floor(imageY / scaleFactor);
       const chunks: number[][] = [];
       const posChunks: number[][] = [];
+      // Track the full-res image-pixel X of the first and last contributed sample so we can build an exact pixel position map even when
+      // positions[] covers only part of the image (cached subset).
+      let firstSampleImgX = -1;
+      let lastSampleImgX = -1;
 
       for (let col = 0; col < numCols; col++) {
         const tile = this.tiledImage.getCachedTile(level, tileRow, col);
@@ -462,6 +466,11 @@ export class ZoomData {
           chunk.push(data[localY * tile.width + x]);
           posChunk.push(xCoords[x]);
         }
+        // Full-res image-pixel X of this tile's first (x=0) and last sample.
+        const tileFirstImgX = col * tileSize * scaleFactor;
+        const tileLastImgX = (col * tileSize + tile.width - 1) * scaleFactor;
+        if (firstSampleImgX < 0) firstSampleImgX = tileFirstImgX;
+        lastSampleImgX = tileLastImgX;
         chunks.push(chunk);
         posChunks.push(posChunk);
       }
@@ -499,8 +508,19 @@ export class ZoomData {
       };
 
       const crosshairPos = resolveX(crosshairImageX);
-      const e0 = resolveX(visImgX0);
-      const e1 = resolveX(visImgX1);
+
+      // Map an image-pixel X to a physical position
+
+      const firstPos = positions[0];
+      const lastPos = positions[positions.length - 1];
+      const pixelSpan = Math.max(1, lastSampleImgX - firstSampleImgX); // calculate the span of pixels between the first and last sample
+      const physPerPixel = (lastPos - firstPos) / pixelSpan; //calculate the physical distance per pixel
+      const edgeToPos = (imageX: number): number =>
+        // covert both the left and right edges of the visible viewport to physical positions
+        firstPos + (imageX - firstSampleImgX) * physPerPixel;
+
+      const e0 = edgeToPos(visImgX0);
+      const e1 = edgeToPos(visImgX1);
 
       return {
         values: result,
@@ -546,6 +566,8 @@ export class ZoomData {
       const pixelX = Math.floor(imageX / scaleFactor);
       const chunks: number[][] = [];
       const posChunks: number[][] = [];
+      let firstSampleImgY = -1;
+      let lastSampleImgY = -1;
 
       for (let row = 0; row < numRows; row++) {
         const tile = this.tiledImage.getCachedTile(level, row, tileCol);
@@ -561,6 +583,10 @@ export class ZoomData {
           chunk.push(data[y * tile.width + localX]);
           posChunk.push(yCoords[y]);
         }
+        const tileFirstImgY = row * tileSize * scaleFactor;
+        const tileLastImgY = (row * tileSize + tile.height - 1) * scaleFactor;
+        if (firstSampleImgY < 0) firstSampleImgY = tileFirstImgY;
+        lastSampleImgY = tileLastImgY;
         chunks.push(chunk);
         posChunks.push(posChunk);
       }
@@ -595,13 +621,21 @@ export class ZoomData {
         const lo = positions[0];
         const hi = positions[positions.length - 1];
         const f = Math.max(0, Math.min(1, imageY / (imgH - 1)));
-        console.log('fired');
         return lo + f * (hi - lo);
       };
 
       const crosshairPos = resolveY(crosshairImageY);
-      const e0 = resolveY(visImgY0);
-      const e1 = resolveY(visImgY1);
+
+      //  Map an image-pixel Y to a physical position same as the horizontal scan, but for Y coordinates
+      const firstPos = positions[0];
+      const lastPos = positions[positions.length - 1];
+      const pixelSpan = Math.max(1, lastSampleImgY - firstSampleImgY);
+      const physPerPixel = (lastPos - firstPos) / pixelSpan;
+      const edgeToPos = (imageY: number): number =>
+        firstPos + (imageY - firstSampleImgY) * physPerPixel;
+
+      const e0 = edgeToPos(visImgY0);
+      const e1 = edgeToPos(visImgY1);
 
       return {
         values: result,
@@ -625,17 +659,17 @@ export class ZoomData {
 
     // ***** Visible viewport edges in image pixel coordinates *****
     // We pass these to the extractors, which resolve them to physical positions using the same tile xCoords/yCoords as the trace.
-    // This makes the panel window match exactly what is on screen
-    // clamping to the image bounds while panning is also done here
-    const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
-    const imgW = this.config.imageSize.Width;
-    const imgH = this.config.imageSize.Height;
-    const clampPx = (v: number, hi: number) => Math.max(0, Math.min(hi, v));
+    /* Viewport edges in image-pixel space. These are not clamped to the image bounds.
+    When zoomed out the canvas extends beyond the image (grey margins) so the left edge is negative and the right edge exceeds imgW-1. 
+    Passing the raw edges lets the extractors extrapolate the window past the image extent
+    so the graph shrinks to match the image block on the main canvas */
 
-    const visImgX0 = clampPx(-this.xPos * scale, imgW - 1); //(0-this.xPos) hence negative
-    const visImgX1 = clampPx((this.canvas!.width - this.xPos) * scale, imgW - 1);
-    const visImgY0 = clampPx(-this.yPos * scale, imgH - 1);
-    const visImgY1 = clampPx((this.canvas!.height - this.yPos) * scale, imgH - 1);
+    const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
+
+    const visImgX0 = -this.xPos * scale; // left canvas edge (negative when zoomed out)
+    const visImgX1 = (this.canvas!.width - this.xPos) * scale; // right edge (> imgW-1 when zoomed out)
+    const visImgY0 = -this.yPos * scale;
+    const visImgY1 = (this.canvas!.height - this.yPos) * scale;
 
     // Helper: convert normalised [0,1] data to physical height values using colorbar range.
     // If the colorbar range is absent, pass the raw value through.
@@ -687,16 +721,16 @@ export class ZoomData {
           ? { min: colorbarMin!, max: colorbarMax! }
           : finiteRange(physValues);
         const scanData: LineScanData = {
-          values: physValues,
-          positions: positions,
-          crosshairPos,
-          posMin: winMin,
+          values: physValues, // normalised height values converted to physical units
+          positions: positions, // physical positions along the scan line in micro meters
+          crosshairPos, // physical position of the crosshair along the scan line in micro meters
+          posMin: winMin, //
           posMax: winMax,
           posAxisLabel: 'x-position',
           valueAxisLabel,
           orientation: 'horizontal',
-          valueMin: vMin,
-          valueMax: vMax,
+          valueMin: vMin, //lowest height value
+          valueMax: vMax, //highest height value
         };
         this.hScanRenderer.draw(scanData);
       } else {
