@@ -7,6 +7,12 @@
 // Main entry point
 export { ZoomData } from './ZoomData';
 
+// Engine and default input handling
+export { ZoomEngine } from './ZoomEngine';
+export type { View, ZoomEngineOptions } from './ZoomEngine';
+export { DefaultController } from './DefaultController';
+export type { DefaultControllerOptions } from './DefaultController';
+
 // Supporting classes (for advanced usage)
 export { Colorbar } from './Colorbar';
 export type { ColorbarOptions, ColorbarOrientation } from './Colorbar';

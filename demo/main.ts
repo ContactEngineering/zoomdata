@@ -15,8 +15,11 @@ import {
 } from '../src/index';
 
 import { Scalebar } from '../src/Scalebar';
-// Configuration - points to examples directory served by cors_server.py
-const DATA_URL = 'http://localhost:8000/examples/synthetic_square4/';
+// Configuration - points to examples directory served by cors_server.py;
+// override with ?data=<root URL of a pyramid>
+const DATA_URL =
+  new URLSearchParams(location.search).get('data') ??
+  'http://localhost:8000/examples/synthetic_square4/';
 
 // Available colormaps
 const COLORMAPS: Record<string, (n: number) => number[]> = {

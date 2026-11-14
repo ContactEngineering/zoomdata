@@ -56,8 +56,12 @@ export interface ZoomDataOptions {
   source?: TileSource;
   /** Root URL where dzdata.json and dzdata_files/ are located */
   rootUrl?: string;
-  /** Zoom level change per scroll increment (default: 0.1) */
+  /** Zoom level change per wheel notch (default: 0.25) */
   zoomLevelIncrement?: number;
+  /** Install the default mouse, touch and keyboard controller (default: true) */
+  controller?: boolean;
+  /** Follow the canvas' CSS size and the device pixel ratio (default: true) */
+  autoResize?: boolean;
   /** Color palette to use (array of 32-bit RGBA integers) */
   colorPalette?: number[];
   /** Value mapped to the first palette entry, in physical units (default: data minimum) */

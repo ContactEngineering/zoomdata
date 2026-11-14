@@ -1,11 +1,11 @@
 /**
- * Drives the viewer for the render tests. This is the only part of the
- * harness that knows the viewer's API; it renders a view synchronously after
+ * Drives the engine for the render tests. This is the only part of the
+ * harness that knows the engine's API; it renders a view synchronously after
  * all tiles it needs have loaded and returns the canvas pixels.
  */
 import type { Sample } from '../../src/sampling';
 import { StaticTileSource, type TileSource } from '../../src/TileSource';
-import { ZoomData } from '../../src/ZoomData';
+import { ZoomEngine } from '../../src/ZoomEngine';
 import type { RGB, Reference, View } from './harness';
 import { fixtureUrl, testPalette } from './harness';
 
@@ -19,6 +19,7 @@ export const NO_DATA: RGB = [255, 0, 255];
 
 export interface Driver {
   canvas: HTMLCanvasElement;
+  engine: ZoomEngine;
   /**
    * Render the view once all tiles it requests are loaded, or once `until`
    * returns true
@@ -40,18 +41,6 @@ export interface Driver {
   /** Delay fetches of tiles whose URL matches; returns a release function */
   blockTiles(pattern: RegExp): () => void;
   dispose(): void;
-}
-
-// Internal state used to render synchronously and to wait for tiles
-interface ZoomDataInternals {
-  zoomLevel: number;
-  xPos: number;
-  yPos: number;
-  render(): void;
-  tiledImage: {
-    isLoading(): boolean;
-    getCacheStats(): { tileCount: number; textureCount: number; bytes: number };
-  };
 }
 
 const blocked: { pattern: RegExp; release: Promise<void> }[] = [];
@@ -85,8 +74,11 @@ function readPixels(canvas: HTMLCanvasElement): Uint8Array {
 }
 
 export interface DriverOptions {
+  /** Canvas size in CSS pixels */
   width?: number;
   height?: number;
+  /** Device pixels per CSS pixel (default: the browser's) */
+  pixelRatio?: number;
   colorRange?: [number, number];
   source?: TileSource;
   cacheBytes?: number;
@@ -94,12 +86,20 @@ export interface DriverOptions {
 
 export async function createDriver(ref: Reference, options: DriverOptions = {}): Promise<Driver> {
   const { width = 200, height = 160, colorRange } = options;
+  if (options.pixelRatio !== undefined) {
+    Object.defineProperty(window, 'devicePixelRatio', {
+      value: options.pixelRatio,
+      configurable: true,
+    });
+  }
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  canvas.style.display = 'block';
   document.body.appendChild(canvas);
 
-  const viewer = new ZoomData({
+  // The engine is driven with view transforms only
+  const engine = await ZoomEngine.create(canvas, {
     source: options.source ?? new StaticTileSource(fixtureUrl(ref.name)),
     colorPalette: testPalette(),
     minValue: colorRange?.[0],
@@ -107,38 +107,35 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
     cacheBytes: options.cacheBytes,
     noDataColor: (NO_DATA[0] | (NO_DATA[1] << 8) | (NO_DATA[2] << 16) | (255 << 24)) >>> 0,
   });
-  await viewer.start(canvas);
-  const internals = viewer as unknown as ZoomDataInternals;
 
+  // Test views are in device pixels of the canvas, engine views in CSS pixels
   const setView = (view: View) => {
-    internals.zoomLevel = ref.maxLevel + Math.log2(view.k);
-    internals.xPos = view.tx;
-    internals.yPos = view.ty;
+    const dpr = engine.devicePixelRatio;
+    engine.setView({ k: view.k / dpr, x: view.tx / dpr, y: view.ty / dpr });
   };
-
-  const loading = () => internals.tiledImage.isLoading();
 
   return {
     canvas,
+    engine,
     async render(view, until) {
       setView(view);
-      internals.render();
-      for (let i = 0; i < 200 && loading() && !until?.(); i++) {
+      engine.render();
+      for (let i = 0; i < 200 && engine.isLoading() && !until?.(); i++) {
         await new Promise((r) => setTimeout(r, 10));
       }
-      internals.render();
+      engine.render();
       return readPixels(canvas);
     },
     renderNow(view) {
       setView(view);
-      internals.render();
+      engine.render();
       return readPixels(canvas);
     },
     setColorRange(min, max) {
-      viewer.setColorRange(min, max);
+      engine.setColorRange(min, max);
     },
-    sampleAt: (x, y) => viewer.sampleAt(x, y),
-    cacheStats: () => internals.tiledImage.getCacheStats(),
+    sampleAt: (x, y) => engine.sampleAt(x, y),
+    cacheStats: () => engine.cacheStats(),
     tileFetches: () => tileFetches,
     async loseContext() {
       const gl = canvas.getContext('webgl2')!;
@@ -171,8 +168,11 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
       };
     },
     dispose() {
-      viewer.stop();
+      engine.dispose();
       canvas.remove();
+      if (options.pixelRatio !== undefined) {
+        delete (window as { devicePixelRatio?: number }).devicePixelRatio;
+      }
     },
   };
 }

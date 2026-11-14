@@ -177,6 +177,32 @@ const viewer = new ZoomData(options: ZoomDataOptions);
 - `onZoomChange: (level: number) => void` - Called when zoom level changes
 - `onError: (error: Error) => void` - Called on errors
 
+### ZoomEngine
+
+`ZoomData` is a ready-made viewer. Applications that bring their own UI
+use the engine directly: it draws for a view transform set from outside
+and has no input handling and no DOM lookups.
+
+```typescript
+import { ZoomEngine, DefaultController } from 'zoomdata';
+
+const engine = await ZoomEngine.create(canvas, { source });
+// screen = k * image + (x, y), in CSS pixels of the canvas
+engine.setView({ k: 0.5, x: 10, y: 20 });
+engine.onViewChange = (view) => {
+  /* update overlays */
+};
+const value = engine.sampleAt(imageX, imageY); // physical units, no fetch
+
+// Optional: mouse, touch (drag, pinch) and keyboard input
+const controller = new DefaultController(engine, {
+  onDoubleClick: (x, y) => console.log('image position', x, y),
+});
+```
+
+The engine sizes the canvas' drawing buffer to its CSS size times the
+device pixel ratio and follows changes of either (`autoResize: true`).
+
 ### Color Palettes
 
 Built-in perceptually uniform colormaps (from matplotlib):

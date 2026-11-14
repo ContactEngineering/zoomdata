@@ -247,6 +247,34 @@ describe('tile cache over budget', () => {
   });
 });
 
+describe('canvas size', () => {
+  it('renders at the device pixel ratio', async () => {
+    // Views in these tests are in device pixels; the engine gets CSS pixels
+    const { ref, driver } = await setup('pattern-ov1', { pixelRatio: 2 });
+    expect([driver.canvas.width, driver.canvas.height]).toEqual([2 * WIDTH, 2 * HEIGHT]);
+    const view = { k: 2, tx: 10.4, ty: 6.2 };
+    const pixels = await driver.render(view);
+    const expected = expectedImage(ref, view, 2 * WIDTH, 2 * HEIGHT);
+    const result = compare(pixels, expected, 2 * WIDTH, OPTIONS);
+    expect(result.mismatches, formatComparison(result)).toBe(0);
+    // At k = 2 device pixels per image pixel the finest level is drawn
+    expect(driver.engine.level).toBe(ref.maxLevel);
+  });
+
+  it('follows CSS size changes', async () => {
+    const { ref, driver } = await setup('pattern-ov0');
+    driver.canvas.style.width = '120px';
+    driver.canvas.style.height = '90px';
+    await expect.poll(() => driver.canvas.width).toBe(120);
+    expect(driver.canvas.height).toBe(90);
+    expect(driver.engine.size).toEqual({ width: 120, height: 90 });
+    const view = { k: 1, tx: 5, ty: 3 };
+    const pixels = await driver.render(view);
+    const expected = expectedImage(ref, view, 120, 90);
+    expect(compare(pixels, expected, 120, OPTIONS).mismatches).toBe(0);
+  });
+});
+
 describe('WebGL2 renderer', () => {
   it('is supported in the test browser', () => {
     expect(supportsWebGL2()).toBe(true);

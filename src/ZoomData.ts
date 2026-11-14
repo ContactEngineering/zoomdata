@@ -1,54 +1,26 @@
-import { Palettes } from './palettes';
-import { ZoomConfiguration } from './ZoomConfiguration';
-import { TiledImage } from './TiledImage';
+import { DefaultController } from './DefaultController';
+import { LineScanRenderer, LineScanData } from './LineScanRenderer';
 import type { Sample } from './sampling';
-import type { TileLoaderOptions } from './TileLoader';
+import type { TiledImage } from './TiledImage';
 import { toTileSource, type TileSource } from './TileSource';
 import type { ZoomDataOptions } from './types';
-import { LineScanRenderer, LineScanData } from './LineScanRenderer';
+import type { ZoomConfiguration } from './ZoomConfiguration';
+import { ZoomEngine, type View } from './ZoomEngine';
 
 /**
- * Main entry point for zoomable data visualization.
- * Handles canvas interaction (zoom, pan) and orchestrates rendering.
+ * Ready-made viewer: a ZoomEngine with the default input controller, a
+ * crosshair and cross-section panels.
+ *
+ * Zoom levels relate to the engine's view scale k (CSS pixels per image
+ * pixel) by k = 2^(zoomLevel - maxZoomLevel); zoomLevel = maxZoomLevel shows
+ * the image at one image pixel per CSS pixel.
  */
 export class ZoomData {
   private readonly source: TileSource;
-  private readonly zoomLevelIncrement: number;
+  private readonly options: ZoomDataOptions;
 
-  private canvas: HTMLCanvasElement | null = null;
-  private config: ZoomConfiguration | null = null;
-  private tiledImage: TiledImage | null = null;
-
-  // View state
-  private xPos: number = 0;
-  private yPos: number = 0;
-  private zoomLevel: number = 0;
-
-  // Drag state
-  private isDragging: boolean = false;
-  private dragStartX: number = 0;
-  private dragStartY: number = 0;
-
-  // Render throttling
-  private renderScheduled: boolean = false;
-  private boundRender: () => void;
-
-  // Event handler references (for cleanup)
-  private boundWheelHandler: (e: WheelEvent) => void;
-  private boundMouseDownHandler: (e: MouseEvent) => void;
-  private boundMouseMoveHandler: (e: MouseEvent) => void;
-  private boundMouseUpHandler: (e: MouseEvent) => void;
-  private boundMouseLeaveHandler: (e: MouseEvent) => void;
-  private boundDblClickHandler: (e: MouseEvent) => void; // double-click for crosshair
-
-  // Color mapping options
-  private colorPalette: number[];
-  private minValue: number | undefined;
-  private maxValue: number | undefined;
-  private readonly noDataColor: number | undefined;
-  private readonly cacheBytes: number | undefined;
-  private readonly loaderOptions: TileLoaderOptions | undefined;
-  private readonly backgroundColor: number | undefined;
+  private engine: ZoomEngine | null = null;
+  private controller: DefaultController | null = null;
 
   // Crosshair state (image pixel coordinates, null = not placed)
   private crosshairImageX: number | null = null;
@@ -74,25 +46,37 @@ export class ZoomData {
       throw new Error('ZoomData: either source or rootUrl is required');
     }
     this.source = toTileSource(source);
-    this.zoomLevelIncrement = options.zoomLevelIncrement ?? 0.1;
+    this.options = options;
+  }
 
-    // Bind methods for event handlers
-    this.boundRender = this.render.bind(this);
-    this.boundWheelHandler = this.handleWheel.bind(this);
-    this.boundMouseDownHandler = this.handleMouseDown.bind(this);
-    this.boundMouseMoveHandler = this.handleMouseMove.bind(this);
-    this.boundMouseUpHandler = this.handleMouseUp.bind(this);
-    this.boundMouseLeaveHandler = this.handleMouseLeave.bind(this);
-    this.boundDblClickHandler = this.handleDblClick.bind(this);
+  /** The engine, once started */
+  getEngine(): ZoomEngine | null {
+    return this.engine;
+  }
 
-    // Store color mapping options
-    this.colorPalette = options.colorPalette ?? Palettes.inferno(256);
-    this.minValue = options.minValue;
-    this.maxValue = options.maxValue;
-    this.noDataColor = options.noDataColor;
-    this.cacheBytes = options.cacheBytes;
-    this.loaderOptions = options.loader;
-    this.backgroundColor = options.backgroundColor;
+  private get config(): ZoomConfiguration | null {
+    return this.engine?.config ?? null;
+  }
+
+  private get tiledImage(): TiledImage | null {
+    return this.engine?.tiles ?? null;
+  }
+
+  private get canvas(): HTMLCanvasElement | null {
+    return this.engine?.canvas ?? null;
+  }
+
+  private get zoomLevel(): number {
+    if (!this.engine) return 0;
+    return this.engine.config.maxZoomLevel + Math.log2(this.engine.view.k);
+  }
+
+  private get xPos(): number {
+    return this.engine?.view.x ?? 0;
+  }
+
+  private get yPos(): number {
+    return this.engine?.view.y ?? 0;
   }
 
   /**
@@ -101,24 +85,24 @@ export class ZoomData {
    * @param hScanCanvas - Canvas for the horizontal line scan panel
    * @param vScanCanvas - Canvas for the vertical line scan panel
    */
-
   async start(
     canvas: HTMLCanvasElement | string,
     hScanCanvas?: HTMLCanvasElement | string | null,
     vScanCanvas?: HTMLCanvasElement | string | null,
   ): Promise<void> {
     // Get canvas element
+    let element: HTMLCanvasElement;
     if (typeof canvas === 'string') {
-      const element = document.getElementById(canvas);
-      if (!element) {
+      const found = document.getElementById(canvas);
+      if (!found) {
         throw new Error(`Canvas element not found: ${canvas}`);
       }
-      if (!(element instanceof HTMLCanvasElement)) {
+      if (!(found instanceof HTMLCanvasElement)) {
         throw new Error(`Element is not a canvas: ${canvas}`);
       }
-      this.canvas = element;
+      element = found;
     } else {
-      this.canvas = canvas;
+      element = canvas;
     }
 
     // Set up  line scan panel renderers
@@ -139,10 +123,18 @@ export class ZoomData {
       this.vScanRenderer.drawEmpty();
     }
 
-    // Load configuration
-    this.config = new ZoomConfiguration(this.source);
     try {
-      await this.config.fetch();
+      this.engine = await ZoomEngine.create(element, {
+        source: this.source,
+        colorPalette: this.options.colorPalette,
+        minValue: this.options.minValue,
+        maxValue: this.options.maxValue,
+        noDataColor: this.options.noDataColor,
+        backgroundColor: this.options.backgroundColor,
+        cacheBytes: this.options.cacheBytes,
+        loader: this.options.loader,
+        autoResize: this.options.autoResize,
+      });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       if (this.onError) {
@@ -150,74 +142,43 @@ export class ZoomData {
       }
       throw error;
     }
+    const engine = this.engine;
 
-    // Create tiled image with WebGL renderer
-    this.tiledImage = new TiledImage(this.config, this.cacheBytes, this.loaderOptions);
-    // The colour range defaults to the range of the data
-    const { encoding, colorbarRange } = this.config.descriptor;
-    this.minValue ??= colorbarRange?.Minimum ?? encoding.addOffset;
-    this.maxValue ??= colorbarRange?.Maximum ?? encoding.addOffset + encoding.scaleFactor;
-    this.tiledImage.initRenderer(this.canvas, this.colorPalette, this.minValue, this.maxValue, {
-      noData: this.noDataColor,
-      background: this.backgroundColor,
-    });
-
-    // Set up tile load callback for re-rendering
-    this.tiledImage.onTilesLoaded = () => {
-      this.scheduleRender();
-
-      // Also refresh line scans when new tiles arrive (they may now have data)
+    engine.onRender = () => this.drawCrosshair();
+    engine.onViewChange = () => {
+      this.onZoomChange?.(this.zoomLevel);
+      // Pan and zoom change the visible window, so the line scans follow
+      if (this.crosshairImageX !== null && this.crosshairImageY !== null) {
+        this.updateLineScanPanels();
+      }
+    };
+    // Refresh line scans when new tiles arrive (they may now have data)
+    engine.onTilesLoaded = () => {
       if (this.crosshairImageX !== null && this.crosshairImageY !== null) {
         this.updateLineScanPanels();
       }
     };
 
-    // Set initial zoom level (zoomed out a bit from max)
-    // this.zoomLevel = Math.max(0, this.config.maxZoomLevel - 4);
-    this.zoomLevel = this.computeFitZoomLevel(); // made the change here to zoom in a bit more by default
-    this.centerImage();
-
-    // Install event handlers
-    this.installEventHandlers();
-
-    // Initial render
-    this.scheduleRender();
+    if (this.options.controller !== false) {
+      this.controller = new DefaultController(engine, {
+        wheelZoomFactor: 2 ** (this.options.zoomLevelIncrement ?? 0.25),
+        onDoubleClick: (x, y) => this.placeCrosshair(x, y),
+      });
+    }
   }
 
   /**
    * Stop rendering and clean up event handlers
    */
   stop(): void {
-    this.removeEventHandlers();
-    this.tiledImage?.dispose();
-    this.canvas = null;
-    this.tiledImage = null;
+    this.controller?.dispose();
+    this.engine?.dispose();
+    this.controller = null;
+    this.engine = null;
   }
 
-  /**
-   * Schedule a render on the next animation frame
-   */
   private scheduleRender(): void {
-    if (!this.renderScheduled) {
-      this.renderScheduled = true;
-      requestAnimationFrame(this.boundRender);
-    }
-  }
-
-  /**
-   * Perform the actual render
-   */
-  private render(): void {
-    this.renderScheduled = false;
-
-    if (!this.canvas || !this.tiledImage) {
-      return;
-    }
-
-    this.tiledImage.renderTo(this.canvas, this.xPos, this.yPos, this.zoomLevel);
-
-    // Draw the crosshair overlay on top of the WebGL canvas
-    this.drawCrosshair();
+    this.engine?.scheduleRender();
   }
 
   /**
@@ -225,26 +186,27 @@ export class ZoomData {
    * the main WebGL canvas. The overlay canvas must have id = mainCanvas.id + '-crosshair'.
    */
   private drawCrosshair(): void {
-    if (this.crosshairImageX === null || this.crosshairImageY === null) return;
-    if (!this.canvas || !this.config) return;
-
-    // Convert image pixel coordinates to screen coordinates
-    const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
-    const screenX = this.xPos + this.crosshairImageX / scale;
-    const screenY = this.yPos + this.crosshairImageY / scale;
-
+    if (!this.canvas || !this.engine) return;
     const overlay = document.getElementById(
       this.canvas.id + '-crosshair',
     ) as HTMLCanvasElement | null;
     if (!overlay) return;
 
     // Keep overlay size in sync with main canvas
-    overlay.width = this.canvas.width;
-    overlay.height = this.canvas.height;
+    const { width, height } = this.engine.size;
+    overlay.width = width;
+    overlay.height = height;
 
     const ctx = overlay.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, overlay.width, overlay.height);
+    if (this.crosshairImageX === null || this.crosshairImageY === null) return;
+
+    // Convert image pixel coordinates to screen coordinates
+    const { x: screenX, y: screenY } = this.engine.imageToScreen(
+      this.crosshairImageX,
+      this.crosshairImageY,
+    );
 
     ctx.strokeStyle = 'rgba(255, 75, 75, 0.9)';
     ctx.lineWidth = 1.5;
@@ -277,149 +239,15 @@ export class ZoomData {
   }
 
   /**
-   * Install event handlers on the canvas
+   * Place the crosshair at an image position and update the line scan
+   * panels.
    */
-  private installEventHandlers(): void {
-    if (!this.canvas) return;
-
-    this.canvas.addEventListener('wheel', this.boundWheelHandler, { passive: false });
-    this.canvas.addEventListener('mousedown', this.boundMouseDownHandler);
-    this.canvas.addEventListener('mousemove', this.boundMouseMoveHandler);
-    this.canvas.addEventListener('mouseup', this.boundMouseUpHandler);
-    this.canvas.addEventListener('mouseleave', this.boundMouseLeaveHandler);
-    this.canvas.addEventListener('dblclick', this.boundDblClickHandler);
-  }
-
-  /**
-   * Remove event handlers from the canvas
-   */
-  private removeEventHandlers(): void {
-    if (!this.canvas) return;
-
-    this.canvas.removeEventListener('wheel', this.boundWheelHandler);
-    this.canvas.removeEventListener('mousedown', this.boundMouseDownHandler);
-    this.canvas.removeEventListener('mousemove', this.boundMouseMoveHandler);
-    this.canvas.removeEventListener('mouseup', this.boundMouseUpHandler);
-    this.canvas.removeEventListener('mouseleave', this.boundMouseLeaveHandler);
-    this.canvas.removeEventListener('dblclick', this.boundDblClickHandler);
-  }
-
-  /**
-   * Handle mouse wheel for zooming
-   */
-  private handleWheel(event: WheelEvent): void {
-    event.preventDefault();
-
-    if (!this.canvas || !this.config) return;
-
-    // Get mouse position relative to canvas
-    const rect = this.canvas.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
-
-    // Convert mouse position to data coordinates
-    const oldScale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
-    const dataX = (mouseX - this.xPos) * oldScale;
-    const dataY = (mouseY - this.yPos) * oldScale;
-
-    // Update zoom level (scroll down = zoom out = higher level number)
-    const oldZoomLevel = this.zoomLevel;
-    if (event.deltaY > 0) {
-      this.zoomLevel = Math.min(this.config.maxZoomLevel, this.zoomLevel + this.zoomLevelIncrement);
-    } else {
-      this.zoomLevel = Math.max(0, this.zoomLevel - this.zoomLevelIncrement);
-    }
-
-    // Adjust position to keep mouse point stable
-    const newScale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
-    this.xPos = mouseX - dataX / newScale;
-    this.yPos = mouseY - dataY / newScale;
-
-    // Notify zoom change
-    if (this.zoomLevel !== oldZoomLevel && this.onZoomChange) {
-      this.onZoomChange(this.zoomLevel);
-    }
-
-    this.scheduleRender();
-    // Refresh line scans so they show the resolution that matches the new zoom
-    if (this.crosshairImageX !== null && this.crosshairImageY !== null) {
-      this.updateLineScanPanels();
-    }
-  }
-
-  /**
-   * Handle mouse down for starting drag
-   */
-  private handleMouseDown(event: MouseEvent): void {
-    if (!this.canvas) return;
-
-    this.isDragging = true;
-    const rect = this.canvas.getBoundingClientRect();
-    this.dragStartX = event.clientX - rect.left - this.xPos;
-    this.dragStartY = event.clientY - rect.top - this.yPos;
-
-    this.canvas.style.cursor = 'grabbing';
-  }
-
-  /**
-   * Handle mouse move for dragging
-   */
-  private handleMouseMove(event: MouseEvent): void {
-    if (!this.isDragging || !this.canvas) return;
-
-    const rect = this.canvas.getBoundingClientRect();
-    this.xPos = event.clientX - rect.left - this.dragStartX;
-    this.yPos = event.clientY - rect.top - this.dragStartY;
-
-    this.scheduleRender();
-    // Pan changes the visible window so the line scans must also be rescaled.
-    if (this.crosshairImageX !== null && this.crosshairImageY !== null) {
-      this.updateLineScanPanels();
-    }
-  }
-
-  /**
-   * Handle mouse up for ending drag
-   */
-  private handleMouseUp(_event: MouseEvent): void {
-    this.isDragging = false;
-    if (this.canvas) {
-      this.canvas.style.cursor = 'grab';
-    }
-  }
-
-  /**
-   * Handle mouse leave for ending drag
-   */
-  private handleMouseLeave(_event: MouseEvent): void {
-    this.isDragging = false;
-    if (this.canvas) {
-      this.canvas.style.cursor = 'default';
-    }
-  }
-
-  /**
-   * Handle double-click: place the crosshair at the clicked image position
-   * and update the line scan panels.
-   */
-  private handleDblClick(event: MouseEvent): void {
-    if (!this.canvas || !this.config) return;
-
-    // Convert screen coordinates to image pixel coordinates
-    const rect = this.canvas.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-    const mouseY = event.clientY - rect.top;
-    const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
+  placeCrosshair(imageX: number, imageY: number): void {
+    if (!this.config) return;
 
     // Clamp to image bounds
-    this.crosshairImageX = Math.max(
-      0,
-      Math.min(this.config.imageSize.Width - 1, (mouseX - this.xPos) * scale),
-    );
-    this.crosshairImageY = Math.max(
-      0,
-      Math.min(this.config.imageSize.Height - 1, (mouseY - this.yPos) * scale),
-    );
+    this.crosshairImageX = Math.max(0, Math.min(this.config.imageSize.Width - 1, imageX));
+    this.crosshairImageY = Math.max(0, Math.min(this.config.imageSize.Height - 1, imageY));
 
     if (this.onCrosshairChange) {
       this.onCrosshairChange(this.crosshairImageX, this.crosshairImageY);
@@ -689,9 +517,9 @@ export class ZoomData {
     const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
 
     const visImgX0 = -this.xPos * scale; // left canvas edge (negative when zoomed out)
-    const visImgX1 = (this.canvas!.width - this.xPos) * scale; // right edge (> imgW-1 when zoomed out)
+    const visImgX1 = (this.engine!.size.width - this.xPos) * scale; // right edge (> imgW-1 when zoomed out)
     const visImgY0 = -this.yPos * scale;
-    const visImgY1 = (this.canvas!.height - this.yPos) * scale;
+    const visImgY1 = (this.engine!.size.height - this.yPos) * scale;
 
     // Helper: convert stored tile values to physical height values
     const colorbarMin = this.config.colorbarRange?.Minimum;
@@ -801,28 +629,17 @@ export class ZoomData {
   clearCrosshair(): void {
     this.crosshairImageX = null;
     this.crosshairImageY = null;
-
-    // Clear the overlay canvas
-    if (this.canvas?.id) {
-      const overlay = document.getElementById(
-        this.canvas.id + '-crosshair',
-      ) as HTMLCanvasElement | null;
-      if (overlay) {
-        overlay.getContext('2d')?.clearRect(0, 0, overlay.width, overlay.height);
-      }
-    }
     this.hScanRenderer?.drawEmpty();
     this.vScanRenderer?.drawEmpty();
+    // The overlay is cleared on the next render
     this.scheduleRender();
   }
 
   /**
-   * Image position (image pixels) of a canvas position (canvas pixels)
+   * Image position (image pixels) of a canvas position (CSS pixels)
    */
   screenToImage(x: number, y: number): { x: number; y: number } | null {
-    if (!this.config) return null;
-    const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
-    return { x: (x - this.xPos) * scale, y: (y - this.yPos) * scale };
+    return this.engine?.screenToImage(x, y) ?? null;
   }
 
   /**
@@ -831,7 +648,7 @@ export class ZoomData {
    * image or when no covering tile is loaded.
    */
   sampleAt(imageX: number, imageY: number): Sample | null {
-    return this.tiledImage?.sampleAt(imageX, imageY) ?? null;
+    return this.engine?.sampleAt(imageX, imageY) ?? null;
   }
 
   /**
@@ -842,18 +659,20 @@ export class ZoomData {
   }
 
   /**
-   * Set the zoom level programmatically
+   * Set the zoom level, keeping the canvas centre fixed
    * @param level - The new zoom level
    */
   setZoomLevel(level: number): void {
-    if (!this.config) return;
-
-    this.zoomLevel = this.config.clampZoomLevel(level);
-    this.scheduleRender();
-
-    if (this.onZoomChange) {
-      this.onZoomChange(this.zoomLevel);
-    }
+    if (!this.engine) return;
+    const view = this.engine.view;
+    const k = 2 ** (level - this.engine.config.maxZoomLevel);
+    const { width, height } = this.engine.size;
+    const f = k / view.k;
+    this.engine.setView({
+      k,
+      x: width / 2 - f * (width / 2 - view.x),
+      y: height / 2 - f * (height / 2 - view.y),
+    });
   }
 
   /**
@@ -901,7 +720,7 @@ export class ZoomData {
   }
 
   /**
-   * Get the current view position
+   * Get the current view position (image origin in CSS pixels)
    */
   getPosition(): { x: number; y: number } {
     return { x: this.xPos, y: this.yPos };
@@ -913,47 +732,39 @@ export class ZoomData {
    * @param y - Y position
    */
   setPosition(x: number, y: number): void {
-    this.xPos = x;
-    this.yPos = y;
-    this.scheduleRender();
+    if (!this.engine) return;
+    this.engine.setView({ ...this.engine.view, x, y });
   }
 
   /**
-   * Reset view to initial state (centered, default zoom)
+   * Get the view transform (screen = k * image + (x, y), CSS pixels)
    */
+  getView(): View | null {
+    return this.engine?.view ?? null;
+  }
 
-  // resetView(): void {
-  //   this.xPos = 0;
-  //   this.yPos = 0;
-  //   if (this.config) {
-  //     this.zoomLevel = Math.max(0, this.config.maxZoomLevel - 4);   // made the change here to zoom in a bit more by default
-  //   }
-  //   this.scheduleRender();
-  // }
+  /**
+   * Set the view transform
+   */
+  setView(view: View): void {
+    this.engine?.setView(view);
+  }
 
+  /**
+   * Reset view to show the whole image
+   */
   resetView(): void {
-    if (!this.canvas || !this.config) return;
-
-    this.zoomLevel = this.computeFitZoomLevel();
-    this.centerImage();
-    this.scheduleRender();
-    if (this.crosshairImageX !== null && this.crosshairImageY !== null) {
-      this.updateLineScanPanels();
-    }
+    if (!this.engine) return;
+    this.engine.setView(this.engine.fitView());
   }
 
   /**
    * Update the color mapping range
-   * @param minValue - New minimum value
-   * @param maxValue - New maximum value
+   * @param minValue - New minimum value, in physical units
+   * @param maxValue - New maximum value, in physical units
    */
   setColorRange(minValue: number, maxValue: number): void {
-    if (!this.tiledImage) return;
-
-    this.minValue = minValue;
-    this.maxValue = maxValue;
-    this.tiledImage.setValueRange(minValue, maxValue);
-    this.scheduleRender();
+    this.engine?.setColorRange(minValue, maxValue);
   }
 
   /**
@@ -961,43 +772,6 @@ export class ZoomData {
    * @param colorPalette - New color palette array
    */
   setColorPalette(colorPalette: number[]): void {
-    if (!this.tiledImage) return;
-
-    this.colorPalette = colorPalette;
-    this.tiledImage.setPalette(colorPalette);
-    this.scheduleRender();
-  }
-
-  private computeFitZoomLevel(): number {
-    if (!this.canvas || !this.config) return 0;
-
-    const imageWidth = this.config.imageSize.Width;
-    const imageHeight = this.config.imageSize.Height;
-
-    const canvasWidth = this.canvas.width;
-    const canvasHeight = this.canvas.height;
-
-    const requiredScale = Math.max(imageWidth / canvasWidth, imageHeight / canvasHeight);
-
-    const maxZoom = this.config.maxZoomLevel;
-
-    const zoomLevel = maxZoom - Math.log2(requiredScale);
-
-    return this.config.clampZoomLevel(zoomLevel);
-  }
-
-  private centerImage(): void {
-    if (!this.canvas || !this.config) return;
-
-    const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
-
-    const imageWidth = this.config.imageSize.Width;
-    const imageHeight = this.config.imageSize.Height;
-
-    const scaledWidth = imageWidth / scale;
-    const scaledHeight = imageHeight / scale;
-
-    this.xPos = (this.canvas.width - scaledWidth) / 2;
-    this.yPos = (this.canvas.height - scaledHeight) / 2;
+    this.engine?.setColorPalette(colorPalette);
   }
 }
