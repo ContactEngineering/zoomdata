@@ -82,6 +82,9 @@ async function init(): Promise<void> {
     source: new StaticTileSource(DATA_URL),
     colorPalette: currentPalette,
     zoomLevelIncrement: 0.1,
+    crosshairCanvas: document.getElementById('zoomCanvas-crosshair') as HTMLCanvasElement,
+    horizontalScanCanvas: document.getElementById('hScanCanvas') as HTMLCanvasElement,
+    verticalScanCanvas: document.getElementById('vScanCanvas') as HTMLCanvasElement,
   });
 
   // Set up error handler
@@ -93,10 +96,10 @@ async function init(): Promise<void> {
   zoomData.onZoomChange = (level) => {
     updateZoomDisplay(level, zoomData.getMaxZoomLevel());
 
-    // Updating the scalebar on every zoom change
-    const canvas = document.getElementById('zoomCanvas') as HTMLCanvasElement;
-    if (scalebar && canvas) {
-      scalebar.update(level);
+    // Updating the scalebar on every view change
+    const view = zoomData.getView();
+    if (scalebar && view) {
+      scalebar.update(view.k);
     }
   };
 
@@ -147,14 +150,8 @@ async function init(): Promise<void> {
   const resetBtn = document.getElementById('resetBtn');
   if (resetBtn) {
     resetBtn.addEventListener('click', () => {
+      // Updates the zoom display and the scalebar through onZoomChange
       zoomData.resetView();
-      updateZoomDisplay(zoomData.getZoomLevel(), zoomData.getMaxZoomLevel());
-
-      // updating the scalebar after reset also
-      const canvas = document.getElementById('zoomCanvas') as HTMLCanvasElement;
-      if (scalebar && canvas) {
-        scalebar.update(zoomData.getZoomLevel());
-      }
     });
   }
 
@@ -172,25 +169,15 @@ async function init(): Promise<void> {
   // Start rendering
   try {
     hideError();
-    await zoomData.start('zoomCanvas', 'hScanCanvas', 'vScanCanvas');
+    await zoomData.start('zoomCanvas');
     updateZoomDisplay(zoomData.getZoomLevel(), zoomData.getMaxZoomLevel());
 
-    // console.log('maxZoomLevel:', zoomData.getMaxZoomLevel());
-    // console.log('imageWidth:', zoomData.getImageWidth());
-    // console.log('physicalWidth:', 1.0);
-
-    // initializing the scalebar
-
     scalebar = new Scalebar(
-      'scalebar-bar',
-      'scalebar-label',
-      zoomData.getPixelsPerMeterWidth(), // physical width in meters
-      zoomData.getImageWidth(), // full res pixel width
-      zoomData.getMaxZoomLevel(), // max zoom level
+      document.getElementById('scalebar-bar')!,
+      document.getElementById('scalebar-label')!,
+      zoomData.getPixelsPerMeterWidth(),
     );
-
-    // Initial scalebar render
-    scalebar.update(zoomData.getZoomLevel());
+    scalebar.update(zoomData.getView()!.k);
 
     const DISPLAY_MIN = zoomData.getMinColorBarRange();
     const DISPLAY_MAX = zoomData.getMaxColorBarRange();

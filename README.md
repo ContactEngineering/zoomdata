@@ -164,7 +164,7 @@ const viewer = new ZoomData(options: ZoomDataOptions);
 
 #### Methods
 
-- `start(canvas: HTMLCanvasElement | string): Promise<void>` - Start rendering
+- `start(canvas: HTMLCanvasElement | string): Promise<void>` - Start rendering (a string is the canvas' id)
 - `stop(): void` - Stop rendering and cleanup
 - `getZoomLevel(): number` - Get current zoom level
 - `setZoomLevel(level: number): void` - Set zoom level

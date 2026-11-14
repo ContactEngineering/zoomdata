@@ -59,7 +59,7 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return originalFetch(input, init);
 };
 
-function readPixels(canvas: HTMLCanvasElement): Uint8Array {
+export function readPixels(canvas: HTMLCanvasElement): Uint8Array {
   const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl'))!;
   const w = canvas.width;
   const h = canvas.height;

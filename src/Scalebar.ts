@@ -1,37 +1,29 @@
+/**
+ * Scale bar: sets the width of a bar element and the text of a label
+ * element to a round physical length.
+ */
 export class Scalebar {
-  private bar: HTMLDivElement;
-  private label: HTMLDivElement;
+  private bar: HTMLElement;
+  private label: HTMLElement;
 
-  private perPixelWidth: number;
-  private imagePixelWidth: number;
-  private maxZoomLevel: number;
+  private pixelsPerMeter: number;
 
-  constructor(
-    barId: string,
-    labelId: string,
-    perPixelWidth: number,
-    imagePixelWidth: number,
-    maxZoomLevel: number,
-  ) {
-    this.bar = document.getElementById(barId) as HTMLDivElement;
-    this.label = document.getElementById(labelId) as HTMLDivElement;
-    this.perPixelWidth = perPixelWidth;
-    this.imagePixelWidth = imagePixelWidth;
-    this.maxZoomLevel = maxZoomLevel;
-
-    if (!this.bar || !this.label) {
-      throw new Error(`Scalebar: could not find elements #${barId} or #${labelId}`);
-    }
+  /**
+   * @param bar - Element whose CSS width is set to the bar length
+   * @param label - Element showing the length
+   * @param pixelsPerMeter - Image pixels per metre (descriptor PixelsPerMeter.Width)
+   */
+  constructor(bar: HTMLElement, label: HTMLElement, pixelsPerMeter: number) {
+    this.bar = bar;
+    this.label = label;
+    this.pixelsPerMeter = pixelsPerMeter;
   }
 
-  update(zoomLevel: number): void {
-    const scale = Math.pow(2, this.maxZoomLevel - zoomLevel);
-    const imageScreenWidthPx = this.imagePixelWidth / scale;
-
-    const physicalWidthM = this.imagePixelWidth / this.perPixelWidth;
-    const physicalWidthMm = physicalWidthM * 1000;
-
-    const mmPerScreenPx = physicalWidthMm / imageScreenWidthPx; // how many mm does one screen pixel represent at the current zoom level
+  /**
+   * @param k - Scale of the view: CSS pixels per image pixel
+   */
+  update(k: number): void {
+    const mmPerScreenPx = 1000 / (this.pixelsPerMeter * k); // how many mm does one screen pixel represent at the current zoom level
 
     const targetBarMm = 100 * mmPerScreenPx; // how much mm would a 100px bar represent at the current zoom level. needed for scalebar
 

@@ -62,10 +62,6 @@ export class ZoomData {
     return this.engine?.tiles ?? null;
   }
 
-  private get canvas(): HTMLCanvasElement | null {
-    return this.engine?.canvas ?? null;
-  }
-
   private get zoomLevel(): number {
     if (!this.engine) return 0;
     return this.engine.config.maxZoomLevel + Math.log2(this.engine.view.k);
@@ -81,16 +77,9 @@ export class ZoomData {
 
   /**
    * Initialize and start rendering to a canvas element
-   * @param canvas - Canvas element or element ID
-   * @param hScanCanvas - Canvas for the horizontal line scan panel
-   * @param vScanCanvas - Canvas for the vertical line scan panel
+   * @param canvas - Canvas element, or for convenience its id
    */
-  async start(
-    canvas: HTMLCanvasElement | string,
-    hScanCanvas?: HTMLCanvasElement | string | null,
-    vScanCanvas?: HTMLCanvasElement | string | null,
-  ): Promise<void> {
-    // Get canvas element
+  async start(canvas: HTMLCanvasElement | string): Promise<void> {
     let element: HTMLCanvasElement;
     if (typeof canvas === 'string') {
       const found = document.getElementById(canvas);
@@ -105,21 +94,13 @@ export class ZoomData {
       element = canvas;
     }
 
-    // Set up  line scan panel renderers
-    if (hScanCanvas) {
-      const el =
-        typeof hScanCanvas === 'string'
-          ? (document.getElementById(hScanCanvas) as HTMLCanvasElement)
-          : hScanCanvas;
-      this.hScanRenderer = new LineScanRenderer(el);
+    // Set up line scan panel renderers
+    if (this.options.horizontalScanCanvas) {
+      this.hScanRenderer = new LineScanRenderer(this.options.horizontalScanCanvas);
       this.hScanRenderer.drawEmpty();
     }
-    if (vScanCanvas) {
-      const el =
-        typeof vScanCanvas === 'string'
-          ? (document.getElementById(vScanCanvas) as HTMLCanvasElement)
-          : vScanCanvas;
-      this.vScanRenderer = new LineScanRenderer(el);
+    if (this.options.verticalScanCanvas) {
+      this.vScanRenderer = new LineScanRenderer(this.options.verticalScanCanvas);
       this.vScanRenderer.drawEmpty();
     }
 
@@ -182,20 +163,17 @@ export class ZoomData {
   }
 
   /**
-   * Draw the crosshair onto the transparent overlay canvas that sits on top of
-   * the main WebGL canvas. The overlay canvas must have id = mainCanvas.id + '-crosshair'.
+   * Draw the crosshair onto the transparent overlay canvas (option
+   * crosshairCanvas) that sits on top of the main WebGL canvas.
    */
   private drawCrosshair(): void {
-    if (!this.canvas || !this.engine) return;
-    const overlay = document.getElementById(
-      this.canvas.id + '-crosshair',
-    ) as HTMLCanvasElement | null;
-    if (!overlay) return;
+    const overlay = this.options.crosshairCanvas;
+    if (!overlay || !this.engine) return;
 
     // Keep overlay size in sync with main canvas
     const { width, height } = this.engine.size;
-    overlay.width = width;
-    overlay.height = height;
+    if (overlay.width !== width) overlay.width = width;
+    if (overlay.height !== height) overlay.height = height;
 
     const ctx = overlay.getContext('2d');
     if (!ctx) return;

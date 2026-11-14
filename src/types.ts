@@ -58,6 +58,12 @@ export interface ZoomDataOptions {
   rootUrl?: string;
   /** Zoom level change per wheel notch (default: 0.25) */
   zoomLevelIncrement?: number;
+  /** Transparent canvas on top of the main canvas for the crosshair */
+  crosshairCanvas?: HTMLCanvasElement;
+  /** Canvas for the horizontal cross-section through the crosshair */
+  horizontalScanCanvas?: HTMLCanvasElement;
+  /** Canvas for the vertical cross-section through the crosshair */
+  verticalScanCanvas?: HTMLCanvasElement;
   /** Install the default mouse, touch and keyboard controller (default: true) */
   controller?: boolean;
   /** Follow the canvas' CSS size and the device pixel ratio (default: true) */
