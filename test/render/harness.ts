@@ -28,7 +28,7 @@ export interface View {
   ty: number;
 }
 
-export interface ReferenceLevel {
+interface ReferenceLevel {
   width: number;
   height: number;
   data: Float64Array;
@@ -45,7 +45,7 @@ export interface Reference {
 
 export type RGB = [number, number, number];
 
-export const FIXTURE_ROOT = '/test/fixtures/';
+const FIXTURE_ROOT = '/test/fixtures/';
 
 export function fixtureUrl(name: string): string {
   return `${FIXTURE_ROOT}${name}/`;
@@ -98,7 +98,7 @@ export function referenceValue(
   return l.data[j * l.width + i];
 }
 
-export function levelForView(ref: Reference, view: View): number {
+function levelForView(ref: Reference, view: View): number {
   return Math.max(0, Math.min(ref.maxLevel, Math.round(ref.maxLevel + Math.log2(view.k))));
 }
 
@@ -175,7 +175,7 @@ export interface CompareOptions {
   colorTolerance?: number;
 }
 
-export interface Mismatch {
+interface Mismatch {
   x: number;
   y: number;
   expected: string;
@@ -246,7 +246,7 @@ export function compare(
 }
 
 /** Expected image as top-down RGBA, for writing diagnostics */
-export function expectedPixels(
+function expectedPixels(
   expected: Expected[],
   options: CompareOptions,
 ): Uint8ClampedArray<ArrayBuffer> {

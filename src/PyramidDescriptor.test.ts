@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseDescriptor } from './PyramidDescriptor';
-import type { DZIMetadata } from './types';
+import { parseDescriptor } from './PyramidDescriptor.js';
+import type { DZIMetadata } from './types.js';
 
 const BASE = {
   Size: { Width: 150, Height: 100 },

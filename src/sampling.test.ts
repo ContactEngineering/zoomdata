@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseDescriptor } from './PyramidDescriptor';
-import { PyramidGeometry } from './PyramidGeometry';
-import { sampleAt } from './sampling';
-import { Tile } from './Tile';
+import { parseDescriptor } from './PyramidDescriptor.js';
+import { PyramidGeometry } from './PyramidGeometry.js';
+import { sampleAt } from './sampling.js';
+import { Tile } from './Tile.js';
 
 const FIXTURES = resolve(__dirname, '../test/fixtures');
 

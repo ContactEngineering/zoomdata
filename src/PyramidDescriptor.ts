@@ -1,9 +1,9 @@
-import type { ValueEncoding } from './TileDecoder';
-import type { ColorbarRange, DZIMetadata, ImageSize } from './types';
+import type { ValueEncoding } from './TileDecoder.js';
+import type { ColorbarRange, DZIMetadata, ImageSize } from './types.js';
 
 /** Tile format versions this reader understands */
-export const SUPPORTED_FORMAT_VERSIONS = [1, 2] as const;
-export type FormatVersion = (typeof SUPPORTED_FORMAT_VERSIONS)[number];
+const SUPPORTED_FORMAT_VERSIONS = [1, 2] as const;
+type FormatVersion = (typeof SUPPORTED_FORMAT_VERSIONS)[number];
 
 /** Validated pyramid descriptor, see docs/pyramid-format.md */
 export interface PyramidDescriptor {

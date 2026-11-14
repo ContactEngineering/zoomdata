@@ -7,7 +7,7 @@
  * shader, so changing either does not touch the tile textures. NaN shows
  * the no-data colour.
  */
-import type { PixelRect } from './PyramidGeometry';
+import type { PixelRect } from './PyramidGeometry.js';
 
 const VERTEX_SHADER = `#version 300 es
   in vec2 a_unit;
@@ -162,11 +162,6 @@ export class WebGLRenderer {
     canvas.addEventListener('webglcontextrestored', this.handleRestored);
   }
 
-  /** Whether the context is currently lost */
-  get isContextLost(): boolean {
-    return this.lost;
-  }
-
   private initResources(): void {
     const gl = this.gl;
     this.program = this.createProgram(VERTEX_SHADER, FRAGMENT_SHADER);
@@ -285,10 +280,6 @@ export class WebGLRenderer {
   setPalette(palette: number[]): void {
     this.palette = palette;
     if (!this.lost) this.uploadPalette();
-  }
-
-  setNoDataColor(color: number): void {
-    this.noData = unpackColor(color);
   }
 
   /**

@@ -5,49 +5,42 @@
  */
 
 // Main entry point
-export { ZoomData } from './ZoomData';
+export { ZoomData } from './ZoomData.js';
 
 // Engine and default input handling
-export { ZoomEngine } from './ZoomEngine';
-export type { View, ZoomEngineEvents, ZoomEngineOptions } from './ZoomEngine';
-export { DefaultController } from './DefaultController';
-export { CrossSections, sampleProfile } from './CrossSections';
-export type { CrossSectionsOptions, Profile } from './CrossSections';
-export { LineScanRenderer } from './LineScanRenderer';
-export type { LineScanData } from './LineScanRenderer';
-export { Scalebar } from './Scalebar';
-export type { DefaultControllerOptions } from './DefaultController';
+export { ZoomEngine } from './ZoomEngine.js';
+export type { View, ZoomEngineEvents, ZoomEngineOptions } from './ZoomEngine.js';
+export { DefaultController } from './DefaultController.js';
+export { CrossSections, sampleProfile } from './CrossSections.js';
+export type { CrossSectionsOptions, Profile } from './CrossSections.js';
+export { LineScanRenderer } from './LineScanRenderer.js';
+export type { LineScanData } from './LineScanRenderer.js';
+export { Scalebar } from './Scalebar.js';
+export type { DefaultControllerOptions } from './DefaultController.js';
 
 // Supporting classes (for advanced usage)
-export { Colorbar } from './Colorbar';
-export type { ColorbarOptions, ColorbarOrientation } from './Colorbar';
-export { Tile } from './Tile';
-export { TileCache } from './TileCache';
-export type { TileCacheOptions } from './TileCache';
-export { TileLoader, HttpError } from './TileLoader';
-export type { TileLoaderOptions, TileRequest } from './TileLoader';
-export { TiledImage } from './TiledImage';
-export { ZoomConfiguration } from './ZoomConfiguration';
-export { PyramidGeometry } from './PyramidGeometry';
-export type { PixelRect, TileAddress } from './PyramidGeometry';
-export { StaticTileSource } from './TileSource';
-export { sampleAt } from './sampling';
-export type { Sample, TileLookup } from './sampling';
-export type { TileSource } from './TileSource';
-export { WebGLRenderer, supportsWebGL2 } from './WebGLRenderer';
-export type { ViewTransform } from './WebGLRenderer';
+export { Colorbar } from './Colorbar.js';
+export type { ColorbarOptions } from './Colorbar.js';
+export { Tile } from './Tile.js';
+export { TileCache } from './TileCache.js';
+export type { TileCacheOptions } from './TileCache.js';
+export { TileLoader, HttpError } from './TileLoader.js';
+export type { TileLoaderOptions, TileRequest } from './TileLoader.js';
+export { TiledImage } from './TiledImage.js';
+export { ZoomConfiguration } from './ZoomConfiguration.js';
+export { PyramidGeometry } from './PyramidGeometry.js';
+export type { PixelRect, TileAddress } from './PyramidGeometry.js';
+export { StaticTileSource } from './TileSource.js';
+export { sampleAt } from './sampling.js';
+export type { Sample, TileLookup } from './sampling.js';
+export type { TileSource } from './TileSource.js';
+export { WebGLRenderer, supportsWebGL2 } from './WebGLRenderer.js';
+export type { ViewTransform } from './WebGLRenderer.js';
 
 // Types
-export type {
-  DZIMetadata,
-  ImageSize,
-  RenderCallback,
-  TileCoordinate,
-  ViewportBounds,
-  ZoomDataOptions,
-} from './types';
+export type { DZIMetadata, ImageSize, RenderCallback, ZoomDataOptions } from './types.js';
 
-export { TileState } from './types';
+export { TileState } from './types.js';
 
 // Color palettes
-export { Palettes, inferno, viridis, magma, plasma, grayscale } from './palettes';
+export { Palettes, inferno, viridis, magma, plasma, grayscale } from './palettes.js';

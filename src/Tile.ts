@@ -1,5 +1,5 @@
-import { decodeTile, type ValueEncoding } from './TileDecoder';
-import { TileState } from './types';
+import { decodeTile, type ValueEncoding } from './TileDecoder.js';
+import { TileState } from './types.js';
 
 export interface TileOptions {
   /** Expected width and height; a tile of another shape is rejected */

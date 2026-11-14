@@ -6,7 +6,7 @@ import eslintConfigPrettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['dist', 'coverage', 'node_modules', 'venv', 'docs', 'examples', 'demo/data'],
+    ignores: ['dist', 'coverage', 'node_modules', 'venv', 'docs', 'demo/data'],
   },
   {
     files: ['src/**/*.ts', 'demo/**/*.ts', 'test/**/*.ts', '*.ts'],

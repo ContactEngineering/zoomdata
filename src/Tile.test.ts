@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { Tile } from './Tile';
-import { TileState } from './types';
+import { Tile } from './Tile.js';
+import { TileState } from './types.js';
 
 // 3 x 2 tile holding h[x, y] = 10 * x + y, scale_factor 2, add_offset -1
 const b = readFileSync(resolve(__dirname, '../test/fixtures/decoder/offset64.nc'));

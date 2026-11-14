@@ -1,7 +1,7 @@
-import { parseDescriptor, type PyramidDescriptor } from './PyramidDescriptor';
-import { PyramidGeometry } from './PyramidGeometry';
-import { toTileSource, type TileSource } from './TileSource';
-import type { ColorbarRange, ImageSize } from './types';
+import { parseDescriptor, type PyramidDescriptor } from './PyramidDescriptor.js';
+import { PyramidGeometry } from './PyramidGeometry.js';
+import { toTileSource, type TileSource } from './TileSource.js';
+import type { ColorbarRange, ImageSize } from './types.js';
 
 /**
  * Represents the global zoom configuration loaded from the pyramid
@@ -143,48 +143,5 @@ export class ZoomConfiguration {
       }
       throw err;
     }
-  }
-
-  /**
-   * Calculate the scale factor at a given zoom level.
-   * Higher zoom levels = smaller scale factor = more zoomed in.
-   * @param zoomLevel - The zoom level (can be fractional)
-   * @returns Scale factor (pixels in data space per pixel in screen space)
-   */
-  scaleFactorAtZoomLevel(zoomLevel: number): number {
-    this.assertLoaded();
-    return Math.pow(2, this._maxZoomLevel! - zoomLevel);
-  }
-
-  /**
-   * Get the number of tile columns at a given zoom level
-   * @param zoomLevel - The integer zoom level
-   * @returns Number of columns
-   */
-  getNumColumns(zoomLevel: number): number {
-    this.assertLoaded();
-    const scaleFactor = this.scaleFactorAtZoomLevel(zoomLevel);
-    return Math.ceil(this._imageSize!.Width / (scaleFactor * this._tileSize!));
-  }
-
-  /**
-   * Get the number of tile rows at a given zoom level
-   * @param zoomLevel - The integer zoom level
-   * @returns Number of rows
-   */
-  getNumRows(zoomLevel: number): number {
-    this.assertLoaded();
-    const scaleFactor = this.scaleFactorAtZoomLevel(zoomLevel);
-    return Math.ceil(this._imageSize!.Height / (scaleFactor * this._tileSize!));
-  }
-
-  /**
-   * Clamp a zoom level to valid bounds
-   * @param zoomLevel - The zoom level to clamp.
-   * @returns Clamped zoom level between 0 and maxZoomLevel
-   */
-  clampZoomLevel(zoomLevel: number): number {
-    this.assertLoaded();
-    return Math.max(0, Math.min(this._maxZoomLevel!, zoomLevel));
   }
 }

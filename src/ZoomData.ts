@@ -1,10 +1,10 @@
-import { DefaultController } from './DefaultController';
-import { CrossSections } from './CrossSections';
-import type { Sample } from './sampling';
-import { toTileSource, type TileSource } from './TileSource';
-import type { ZoomDataOptions } from './types';
-import type { ZoomConfiguration } from './ZoomConfiguration';
-import { ZoomEngine, type View } from './ZoomEngine';
+import { DefaultController } from './DefaultController.js';
+import { CrossSections } from './CrossSections.js';
+import type { Sample } from './sampling.js';
+import { toTileSource, type TileSource } from './TileSource.js';
+import type { ZoomDataOptions } from './types.js';
+import type { ZoomConfiguration } from './ZoomConfiguration.js';
+import { ZoomEngine, type View } from './ZoomEngine.js';
 
 /**
  * Ready-made viewer: a ZoomEngine with the default input controller, a

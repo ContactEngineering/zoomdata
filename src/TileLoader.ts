@@ -1,6 +1,6 @@
-import type { Tile } from './Tile';
-import type { TileSource } from './TileSource';
-import { TileState } from './types';
+import type { Tile } from './Tile.js';
+import type { TileSource } from './TileSource.js';
+import { TileState } from './types.js';
 
 /** A tile the view wants, with its priority (lower loads first) */
 export interface TileRequest {

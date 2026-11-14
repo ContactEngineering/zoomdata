@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { Scalebar } from './Scalebar';
+import { Scalebar } from './Scalebar.js';
 
 let bar: HTMLElement;
 let label: HTMLElement;

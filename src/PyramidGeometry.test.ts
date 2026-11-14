@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PyramidGeometry } from './PyramidGeometry';
+import { PyramidGeometry } from './PyramidGeometry.js';
 
 // 150 x 100 image, 32 pixel tiles: the levels are 150x100, 75x50, 38x25,
 // 19x13, 10x7, 5x4, 3x2, 2x1, 1x1 (levels 8 down to 0)

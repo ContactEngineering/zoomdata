@@ -1,4 +1,4 @@
-import type { Tile } from './Tile';
+import type { Tile } from './Tile.js';
 
 export interface TileCacheOptions {
   /** Memory budget in bytes (default: 256 MiB) */
@@ -9,7 +9,7 @@ export interface TileCacheOptions {
   isPinned?: (key: string, tile: Tile) => boolean;
 }
 
-export const DEFAULT_CACHE_BYTES = 256 * 1024 * 1024;
+const DEFAULT_CACHE_BYTES = 256 * 1024 * 1024;
 
 /**
  * LRU (Least Recently Used) cache for tiles, bounded by the bytes they hold.

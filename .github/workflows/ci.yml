@@ -30,15 +30,21 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Find unused files, exports and dependencies
+        run: npm run lint:unused
+
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Build the package
+        run: npm pack --dry-run
 
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 22]
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
 

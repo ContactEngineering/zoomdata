@@ -1,8 +1,8 @@
 /**
  * Shared type definitions for the zoomdata library
  */
-import type { TileLoaderOptions } from './TileLoader';
-import type { TileSource } from './TileSource';
+import type { TileLoaderOptions } from './TileLoader.js';
+import type { TileSource } from './TileSource.js';
 
 /** Size dimensions for images */
 export interface ImageSize {
@@ -41,13 +41,6 @@ export interface DZIMetadata {
     Downsample?: string;
     Colormap?: string;
   };
-}
-
-/** Coordinates for a tile in the zoom pyramid */
-export interface TileCoordinate {
-  zoomLevel: number;
-  row: number;
-  column: number;
 }
 
 /** Options for initializing ZoomData */
@@ -94,14 +87,6 @@ export enum TileState {
   Ready = 'ready',
   /** Tile fetch failed */
   Error = 'error',
-}
-
-/** Viewport bounds in data coordinates */
-export interface ViewportBounds {
-  xMin: number;
-  xMax: number;
-  yMin: number;
-  yMax: number;
 }
 
 /** Callback for render completion */

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { StaticTileSource, toTileSource, type TileSource } from './TileSource';
+import { StaticTileSource, toTileSource, type TileSource } from './TileSource.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
