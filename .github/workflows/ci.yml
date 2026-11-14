@@ -30,6 +30,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Find unused files, exports and dependencies
+        run: npm run lint:unused
+
       - name: Typecheck
         run: npm run typecheck
 

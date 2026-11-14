@@ -102,6 +102,9 @@ the writer. Regenerate them with `python test/fixtures/generate.py`.
 # Type check
 npm run typecheck
 
+# Unused files, exports and dependencies
+npm run lint:unused
+
 # Build for production
 npm run build
 ```
