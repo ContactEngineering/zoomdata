@@ -148,3 +148,7 @@ dist
 # Examples
 examples/**/*.json
 examples/**/dzdata_files/
+
+# Render test diagnostics
+test/render/__output__/
+.vitest-attachments/

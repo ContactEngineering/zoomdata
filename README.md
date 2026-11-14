@@ -58,6 +58,26 @@ npm run dev
 
 This starts the Vite dev server on port 3000 and opens the demo in your browser.
 
+### Tests
+
+```bash
+# Unit tests (happy-dom)
+npm test
+
+# Render tests: render the fixture pyramids in headless Chromium and compare
+# every pixel with an image computed from reference data
+npx playwright install chromium   # once
+npm run test:render
+```
+
+On a mismatch, the render tests write the actual, expected and diff images
+to `test/render/__output__/`. The rules for the expected image are documented
+in `test/render/harness.ts`.
+
+The fixtures in `test/fixtures/` are tile pyramids written by
+SurfaceTopography, together with reference data computed independently of
+the writer. Regenerate them with `python test/fixtures/generate.py`.
+
 ### Building the Library
 
 ```bash

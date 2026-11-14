@@ -1,0 +1,50 @@
+{
+ "maxLevel": 8,
+ "levels": {
+  "0": {
+   "width": 1,
+   "height": 1,
+   "offset": 0
+  },
+  "1": {
+   "width": 2,
+   "height": 1,
+   "offset": 8
+  },
+  "2": {
+   "width": 3,
+   "height": 2,
+   "offset": 24
+  },
+  "3": {
+   "width": 5,
+   "height": 3,
+   "offset": 72
+  },
+  "4": {
+   "width": 9,
+   "height": 5,
+   "offset": 192
+  },
+  "5": {
+   "width": 17,
+   "height": 9,
+   "offset": 552
+  },
+  "6": {
+   "width": 33,
+   "height": 18,
+   "offset": 1776
+  },
+  "7": {
+   "width": 65,
+   "height": 35,
+   "offset": 6528
+  },
+  "8": {
+   "width": 130,
+   "height": 70,
+   "offset": 24728
+  }
+ }
+}

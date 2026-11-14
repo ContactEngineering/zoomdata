@@ -6,3 +6,5 @@ venv
 docs
 examples
 *.nc
+test/fixtures
+test/render/__output__

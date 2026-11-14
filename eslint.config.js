@@ -8,7 +8,7 @@ export default tseslint.config(
     ignores: ['dist', 'coverage', 'node_modules', 'venv', 'docs', 'examples'],
   },
   {
-    files: ['src/**/*.ts', 'demo/**/*.ts', '*.ts'],
+    files: ['src/**/*.ts', 'demo/**/*.ts', 'test/**/*.ts', '*.ts'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       globals: {
