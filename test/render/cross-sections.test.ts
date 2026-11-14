@@ -40,6 +40,8 @@ describe('CrossSections', () => {
     expect(h.stride).toBe(2);
     // The whole image is visible: one value per level pixel
     expect(h.values.length).toBe(75);
+    // Values are located at the first point of their block
+    expect([...h.positions.slice(0, 3)]).toEqual([0, 2, 4]);
     let nan = 0;
     for (let i = 0; i < h.values.length; i++) {
       const sample = driver.engine.sampleAt(h.positions[i], 61.7, h.level)!;

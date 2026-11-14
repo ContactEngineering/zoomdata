@@ -5,7 +5,7 @@ import type { ZoomEngine } from './ZoomEngine';
 export interface Profile {
   /** Values in physical units, NaN where undefined or not loaded */
   values: Float64Array;
-  /** Image coordinate along the line of each value (centre of its block) */
+  /** Image coordinate along the line of each value (first point of its block) */
   positions: Float64Array;
   /** Level the profile was sampled at, and its stride */
   level: number;
@@ -35,9 +35,9 @@ export function sampleProfile(
   const values = new Float64Array(n);
   const positions = new Float64Array(n);
   for (let j = 0; j < n; j++) {
-    // Centre of the level pixel; the last block may be truncated
-    const start = (i0 + j) * stride;
-    const p = (start + Math.min(start + stride, length)) / 2;
+    // A value is located at the first point of its block, as in the tiles'
+    // coordinate variables (see docs/pyramid-format.md)
+    const p = (i0 + j) * stride;
     const s = axis === 'x' ? engine.sampleAt(p, at, level) : engine.sampleAt(at, p, level);
     values[j] = s ? s.value : NaN;
     positions[j] = p;
