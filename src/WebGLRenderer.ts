@@ -1,48 +1,63 @@
 /**
- * WebGL-based renderer for tiled zoomable data.
- * Performs color mapping on the GPU for better performance.
+ * WebGL2 renderer for tiled zoomable data.
+ *
+ * Tiles are uploaded once as R32F textures holding their stored values and
+ * sampled with texelFetch (nearest neighbour, no filtering extension
+ * needed). The colour range and the palette are applied in the fragment
+ * shader, so changing either does not touch the tile textures. NaN shows
+ * the no-data colour.
  */
+import type { PixelRect } from './PyramidGeometry';
 
-// Vertex shader - transforms tile quads to screen space
-const VERTEX_SHADER = `
-  attribute vec2 a_position;
-  attribute vec2 a_texCoord;
+const VERTEX_SHADER = `#version 300 es
+  in vec2 a_unit;
 
+  // Quad in screen pixels and the matching tile texel coordinates
+  uniform vec4 u_screenRect;
+  uniform vec4 u_texelRect;
   uniform vec2 u_resolution;
-  uniform vec2 u_translation;
-  uniform vec2 u_scale;
 
-  varying vec2 v_texCoord;
+  out vec2 v_texel;
 
   void main() {
-    // Apply scale and translation, then convert to clip space
-    vec2 position = (a_position * u_scale + u_translation) / u_resolution * 2.0 - 1.0;
-    // Flip Y for canvas coordinates (top-left origin)
-    gl_Position = vec4(position.x, -position.y, 0.0, 1.0);
-    v_texCoord = a_texCoord;
+    vec2 screen = mix(u_screenRect.xy, u_screenRect.zw, a_unit);
+    vec2 clip = screen / u_resolution * 2.0 - 1.0;
+    gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+    v_texel = mix(u_texelRect.xy, u_texelRect.zw, a_unit);
   }
 `;
 
-// Fragment shader - samples data texture and applies color palette
-const FRAGMENT_SHADER = `
-  precision mediump float;
+const FRAGMENT_SHADER = `#version 300 es
+  precision highp float;
+  precision highp int;
+  precision highp sampler2D;
 
-  uniform sampler2D u_dataTexture;
-  uniform sampler2D u_paletteTexture;
-  uniform float u_minValue;
-  uniform float u_maxValue;
+  uniform sampler2D u_data;
+  uniform sampler2D u_palette;
+  // t = v * u_map.x + u_map.y maps a stored value to [0, 1]
+  uniform vec2 u_map;
+  uniform vec4 u_noData;
 
-  varying vec2 v_texCoord;
+  in vec2 v_texel;
+  out vec4 outColor;
+
+  bool isNaN(float v) {
+    uint bits = floatBitsToUint(v);
+    return (bits & 0x7f800000u) == 0x7f800000u && (bits & 0x007fffffu) != 0u;
+  }
 
   void main() {
-    // Sample the data value
-    float value = texture2D(u_dataTexture, v_texCoord).r;
-
-    // Normalize to [0, 1] range
-    float normalized = clamp((value - u_minValue) / (u_maxValue - u_minValue), 0.0, 1.0);
-
-    // Sample the color palette
-    gl_FragColor = texture2D(u_paletteTexture, vec2(normalized, 0.5));
+    ivec2 size = textureSize(u_data, 0);
+    ivec2 p = clamp(ivec2(floor(v_texel)), ivec2(0), size - 1);
+    float v = texelFetch(u_data, p, 0).r;
+    if (isNaN(v)) {
+      outColor = u_noData;
+      return;
+    }
+    float t = clamp(v * u_map.x + u_map.y, 0.0, 1.0);
+    int n = textureSize(u_palette, 0).x;
+    int i = clamp(int(floor(t * float(n))), 0, n - 1);
+    outColor = texelFetch(u_palette, ivec2(i, 0), 0);
   }
 `;
 
@@ -50,414 +65,300 @@ export interface TileTexture {
   texture: WebGLTexture;
   width: number;
   height: number;
+  /** Bytes held on the GPU */
+  bytes: number;
+}
+
+/** View transform: screen = k * image + (tx, ty), in canvas pixels */
+export interface ViewTransform {
+  k: number;
+  tx: number;
+  ty: number;
+}
+
+/** Where a tile texture sits in the image */
+export interface TilePlacement {
+  /** Image pixels per texel (the level's stride) */
+  stride: number;
+  /** Level pixel of the texture's first texel */
+  originX: number;
+  originY: number;
+  /** Part of the image to draw, in image pixels */
+  clip: PixelRect;
+  /** Maps stored values to [0, 1]: t = v * scale + offset */
+  scale: number;
+  offset: number;
+}
+
+/** Whether the browser can run the renderer */
+export function supportsWebGL2(): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    return canvas.getContext('webgl2') !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Split a 32-bit ABGR colour (palette convention) into RGBA bytes */
+function unpackColor(color: number): [number, number, number, number] {
+  return [color & 0xff, (color >>> 8) & 0xff, (color >>> 16) & 0xff, (color >>> 24) & 0xff];
+}
+
+export interface RendererColors {
+  /** 32-bit ABGR colour of undefined points (default: transparent) */
+  noData?: number;
+  /** 32-bit ABGR colour behind the image (default: light grey) */
+  background?: number;
 }
 
 export class WebGLRenderer {
-  private gl: WebGLRenderingContext;
-  private program: WebGLProgram;
-  private positionBuffer: WebGLBuffer;
-  private texCoordBuffer: WebGLBuffer;
-  private paletteTexture: WebGLTexture;
+  private readonly canvas: HTMLCanvasElement;
+  private gl: WebGL2RenderingContext;
+  private palette: number[];
+  private noData: [number, number, number, number];
+  private background: [number, number, number, number];
 
-  // Attribute and uniform locations
-  private positionLocation: number;
-  private texCoordLocation: number;
-  private resolutionLocation: WebGLUniformLocation;
-  private translationLocation: WebGLUniformLocation;
-  private scaleLocation: WebGLUniformLocation;
-  private dataTextureLocation: WebGLUniformLocation;
-  private paletteTextureLocation: WebGLUniformLocation;
-  private minValueLocation: WebGLUniformLocation;
-  private maxValueLocation: WebGLUniformLocation;
+  private program!: WebGLProgram;
+  private vao!: WebGLVertexArrayObject;
+  private buffer!: WebGLBuffer;
+  private paletteTexture!: WebGLTexture;
+  private uniforms!: Record<string, WebGLUniformLocation>;
 
-  // Current state
-  private minValue: number;
-  private maxValue: number;
+  private view: ViewTransform = { k: 1, tx: 0, ty: 0 };
+  private lost = false;
 
-  constructor(canvas: HTMLCanvasElement, palette: number[], minValue: number, maxValue: number) {
-    const gl = canvas.getContext('webgl', {
+  /** Called after the context was restored; textures must be re-created */
+  onContextRestored: (() => void) | null = null;
+
+  private readonly handleLost = (event: Event) => {
+    // Allow the context to be restored
+    event.preventDefault();
+    this.lost = true;
+  };
+
+  private readonly handleRestored = () => {
+    this.lost = false;
+    this.initResources();
+    this.onContextRestored?.();
+  };
+
+  constructor(canvas: HTMLCanvasElement, palette: number[], colors: RendererColors = {}) {
+    const gl = canvas.getContext('webgl2', {
       alpha: false,
       antialias: false,
       preserveDrawingBuffer: false,
     });
-
     if (!gl) {
-      throw new Error('WebGL not supported');
+      throw new Error('WebGL2 not supported');
+    }
+    this.canvas = canvas;
+    this.gl = gl;
+    this.palette = palette;
+    this.noData = unpackColor(colors.noData ?? 0);
+    this.background = unpackColor(colors.background ?? 0xfff2f2f2);
+    this.initResources();
+    canvas.addEventListener('webglcontextlost', this.handleLost);
+    canvas.addEventListener('webglcontextrestored', this.handleRestored);
+  }
+
+  /** Whether the context is currently lost */
+  get isContextLost(): boolean {
+    return this.lost;
+  }
+
+  private initResources(): void {
+    const gl = this.gl;
+    this.program = this.createProgram(VERTEX_SHADER, FRAGMENT_SHADER);
+    this.uniforms = {};
+    for (const name of [
+      'u_screenRect',
+      'u_texelRect',
+      'u_resolution',
+      'u_data',
+      'u_palette',
+      'u_map',
+      'u_noData',
+    ]) {
+      this.uniforms[name] = gl.getUniformLocation(this.program, name)!;
     }
 
-    this.gl = gl;
-    this.minValue = minValue;
-    this.maxValue = maxValue;
+    this.vao = gl.createVertexArray()!;
+    gl.bindVertexArray(this.vao);
+    this.buffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]),
+      gl.STATIC_DRAW,
+    );
+    const loc = gl.getAttribLocation(this.program, 'a_unit');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
 
-    // Compile shaders and create program
-    this.program = this.createProgram(VERTEX_SHADER, FRAGMENT_SHADER);
+    this.paletteTexture = gl.createTexture()!;
+    this.uploadPalette();
 
-    // Get attribute and uniform locations
-    this.positionLocation = gl.getAttribLocation(this.program, 'a_position');
-    this.texCoordLocation = gl.getAttribLocation(this.program, 'a_texCoord');
-    this.resolutionLocation = gl.getUniformLocation(this.program, 'u_resolution')!;
-    this.translationLocation = gl.getUniformLocation(this.program, 'u_translation')!;
-    this.scaleLocation = gl.getUniformLocation(this.program, 'u_scale')!;
-    this.dataTextureLocation = gl.getUniformLocation(this.program, 'u_dataTexture')!;
-    this.paletteTextureLocation = gl.getUniformLocation(this.program, 'u_paletteTexture')!;
-    this.minValueLocation = gl.getUniformLocation(this.program, 'u_minValue')!;
-    this.maxValueLocation = gl.getUniformLocation(this.program, 'u_maxValue')!;
-
-    // Create buffers for a unit quad
-    this.positionBuffer = this.createBuffer(new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]));
-
-    this.texCoordBuffer = this.createBuffer(new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]));
-
-    // Create palette texture
-    this.paletteTexture = this.createPaletteTexture(palette);
-
-    // Enable blending for potential transparency
+    // Undefined points may be transparent and show the background
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   }
 
-  /**
-   * Compile a shader from source
-   */
   private compileShader(type: number, source: string): WebGLShader {
     const gl = this.gl;
     const shader = gl.createShader(type);
     if (!shader) {
       throw new Error('Failed to create shader');
     }
-
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
-
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
       const info = gl.getShaderInfoLog(shader);
       gl.deleteShader(shader);
       throw new Error(`Shader compilation failed: ${info}`);
     }
-
     return shader;
   }
 
-  /**
-   * Create a shader program from vertex and fragment shader sources
-   */
   private createProgram(vertexSource: string, fragmentSource: string): WebGLProgram {
     const gl = this.gl;
-    const vertexShader = this.compileShader(gl.VERTEX_SHADER, vertexSource);
-    const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, fragmentSource);
-
     const program = gl.createProgram();
     if (!program) {
       throw new Error('Failed to create program');
     }
-
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
+    gl.attachShader(program, this.compileShader(gl.VERTEX_SHADER, vertexSource));
+    gl.attachShader(program, this.compileShader(gl.FRAGMENT_SHADER, fragmentSource));
     gl.linkProgram(program);
-
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      const info = gl.getProgramInfoLog(program);
-      throw new Error(`Program linking failed: ${info}`);
+      throw new Error(`Program linking failed: ${gl.getProgramInfoLog(program)}`);
     }
-
     return program;
   }
 
-  /**
-   * Create a buffer with the given data
-   */
-  private createBuffer(data: Float32Array): WebGLBuffer {
+  private uploadPalette(): void {
     const gl = this.gl;
-    const buffer = gl.createBuffer();
-    if (!buffer) {
-      throw new Error('Failed to create buffer');
-    }
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-
-    return buffer;
+    const rgba = new Uint8Array(this.palette.length * 4);
+    this.palette.forEach((color, i) => rgba.set(unpackColor(color), 4 * i));
+    gl.bindTexture(gl.TEXTURE_2D, this.paletteTexture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA8,
+      this.palette.length,
+      1,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      rgba,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   }
 
   /**
-   * Create a 1D texture from the color palette
-   */
-  private createPaletteTexture(palette: number[]): WebGLTexture {
-    const gl = this.gl;
-    const texture = gl.createTexture();
-    if (!texture) {
-      throw new Error('Failed to create palette texture');
-    }
-
-    // Convert palette to RGBA bytes
-    const rgba = new Uint8Array(palette.length * 4);
-    for (let i = 0; i < palette.length; i++) {
-      const color = palette[i];
-      rgba[i * 4 + 0] = color & 0xff; // R
-      rgba[i * 4 + 1] = (color >> 8) & 0xff; // G
-      rgba[i * 4 + 2] = (color >> 16) & 0xff; // B
-      rgba[i * 4 + 3] = (color >> 24) & 0xff; // A
-    }
-
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, palette.length, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-    return texture;
-  }
-
-  /**
-   * Create a texture from raw tile data (float array)
+   * Upload tile values (row-major, width x height) as an R32F texture
    */
   createTileTexture(data: Float32Array, width: number, height: number): TileTexture {
+    if (data.length !== width * height) {
+      throw new Error(`Tile data length ${data.length} does not match ${width} x ${height}`);
+    }
     const gl = this.gl;
     const texture = gl.createTexture();
     if (!texture) {
       throw new Error('Failed to create tile texture');
     }
-
-    console.log(
-      `createTileTexture: input width=${width}, height=${height}, data.length=${data.length}`,
-    );
-
-    // Validate dimensions match data length
-    const expectedSize = width * height;
-    if (data.length !== expectedSize) {
-      console.error(
-        `Tile data length (${data.length}) doesn't match dimensions (${width}x${height}=${expectedSize})`,
-      );
-      // Adjust dimensions to match actual data if possible
-      if (data.length > 0) {
-        // Try to infer square dimensions, or use data length as width with height=1
-        const sqrtLen = Math.sqrt(data.length);
-        if (Number.isInteger(sqrtLen)) {
-          width = sqrtLen;
-          height = sqrtLen;
-          console.log(`  Adjusted to square: ${width}x${height}`);
-        } else {
-          width = data.length;
-          height = 1;
-          console.log(`  Adjusted to 1D: ${width}x${height}`);
-        }
-      }
-    }
-
-    console.log(
-      `  Final texture dimensions: ${width}x${height}, luminance.length will be ${data.length}`,
-    );
-    console.log(`  Normalization range: minValue=${this.minValue}, maxValue=${this.maxValue}`);
-
-    // Debug: check actual data range
-    let dataMin = Infinity,
-      dataMax = -Infinity;
-    for (let i = 0; i < data.length; i++) {
-      if (data[i] < dataMin) dataMin = data[i];
-      if (data[i] > dataMax) dataMax = data[i];
-    }
-    console.log(`  Actual data range: [${dataMin}, ${dataMax}]`);
-
     gl.bindTexture(gl.TEXTURE_2D, texture);
-
-    // WebGL 1.0 doesn't support float textures directly without extensions
-    // Convert to luminance (8-bit) with normalized values for now
-    // For better precision, we could use OES_texture_float extension
-    const luminance = new Uint8Array(data.length);
-    for (let i = 0; i < data.length; i++) {
-      // Normalize to 0-255 range based on min/max
-      const normalized = (data[i] - this.minValue) / (this.maxValue - this.minValue);
-      luminance[i] = Math.max(0, Math.min(255, Math.round(normalized * 255)));
-    }
-
-    // Debug: check luminance range
-    let lumMin = 255,
-      lumMax = 0;
-    for (let i = 0; i < luminance.length; i++) {
-      if (luminance[i] < lumMin) lumMin = luminance[i];
-      if (luminance[i] > lumMax) lumMax = luminance[i];
-    }
-    console.log(`  Luminance range: [${lumMin}, ${lumMax}]`);
-
-    // Set pixel store alignment to 1 byte (default is 4) to handle non-power-of-2 textures
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.LUMINANCE,
-      width,
-      height,
-      0,
-      gl.LUMINANCE,
-      gl.UNSIGNED_BYTE,
-      luminance,
-    );
-
-    // Check for WebGL errors
-    const error = gl.getError();
-    if (error !== gl.NO_ERROR) {
-      console.error(
-        `WebGL error after texImage2D: ${error}, width=${width}, height=${height}, luminance.length=${luminance.length}`,
-      );
-    }
-
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, width, height, 0, gl.RED, gl.FLOAT, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-    return { texture, width, height };
+    return { texture, width, height, bytes: 4 * width * height };
   }
 
-  /**
-   * Delete a tile texture
-   */
   deleteTileTexture(tileTexture: TileTexture): void {
-    this.gl.deleteTexture(tileTexture.texture);
+    if (!this.lost) this.gl.deleteTexture(tileTexture.texture);
   }
 
-  /**
-   * Update the color palette
-   */
   setPalette(palette: number[]): void {
-    const gl = this.gl;
+    this.palette = palette;
+    if (!this.lost) this.uploadPalette();
+  }
 
-    // Convert palette to RGBA bytes
-    const rgba = new Uint8Array(palette.length * 4);
-    for (let i = 0; i < palette.length; i++) {
-      const color = palette[i];
-      rgba[i * 4 + 0] = color & 0xff;
-      rgba[i * 4 + 1] = (color >> 8) & 0xff;
-      rgba[i * 4 + 2] = (color >> 16) & 0xff;
-      rgba[i * 4 + 3] = (color >> 24) & 0xff;
-    }
-
-    gl.bindTexture(gl.TEXTURE_2D, this.paletteTexture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, palette.length, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+  setNoDataColor(color: number): void {
+    this.noData = unpackColor(color);
   }
 
   /**
-   * Update the value range for color mapping
+   * Clear the canvas and set the view transform for the following draws
    */
-  setValueRange(minValue: number, maxValue: number): void {
-    this.minValue = minValue;
-    this.maxValue = maxValue;
-  }
-
-  /**
-   * Clear the canvas
-   */
-  clear(): void {
+  beginFrame(view: ViewTransform): void {
+    this.view = view;
+    if (this.lost) return;
     const gl = this.gl;
-    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    gl.clearColor(0.95, 0.95, 0.95, 1.0); // Light gray background
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    const [r, g, b] = this.background;
+    gl.clearColor(r / 255, g / 255, b / 255, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
   }
 
   /**
-   * Render a tile at the specified position and size
+   * Draw the part `placement.clip` of the image from a tile texture
    */
-  renderTile(tileTexture: TileTexture, x: number, y: number, width: number, height: number): void {
-    this.renderTileRegion(tileTexture, x, y, width, height, 0, 0, 1, 1);
-  }
-
-  /**
-   * Render a region of a tile texture at the specified position and size
-   * @param tileTexture - The tile texture to render
-   * @param x - Screen X position
-   * @param y - Screen Y position
-   * @param width - Screen width
-   * @param height - Screen height
-   * @param texX - Texture X coordinate (0-1)
-   * @param texY - Texture Y coordinate (0-1)
-   * @param texW - Texture width (0-1)
-   * @param texH - Texture height (0-1)
-   */
-  renderTileRegion(
-    tileTexture: TileTexture,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    texX: number,
-    texY: number,
-    texW: number,
-    texH: number,
-  ): void {
+  drawTile(tileTexture: TileTexture, placement: TilePlacement): void {
+    if (this.lost) return;
     const gl = this.gl;
+    const { k, tx, ty } = this.view;
+    const { stride, originX, originY, clip } = placement;
+
+    // Clip to the canvas (with a margin) in double precision, so large
+    // images at high magnification do not lose float32 precision
+    const margin = 1;
+    const x0 = Math.max(clip.x0, (-margin - tx) / k);
+    const y0 = Math.max(clip.y0, (-margin - ty) / k);
+    const x1 = Math.min(clip.x1, (this.canvas.width + margin - tx) / k);
+    const y1 = Math.min(clip.y1, (this.canvas.height + margin - ty) / k);
+    if (x1 <= x0 || y1 <= y0) return;
 
     gl.useProgram(this.program);
-
-    // Set resolution uniform
-    gl.uniform2f(this.resolutionLocation, gl.canvas.width, gl.canvas.height);
-
-    // Set translation and scale for this tile
-    gl.uniform2f(this.translationLocation, x, y);
-    gl.uniform2f(this.scaleLocation, width, height);
-
-    console.log(
-      `renderTileRegion: x=${x}, y=${y}, width=${width}, height=${height}, texX=${texX}, texY=${texY}, texW=${texW}, texH=${texH}`,
+    gl.bindVertexArray(this.vao);
+    gl.uniform2f(this.uniforms.u_resolution, this.canvas.width, this.canvas.height);
+    gl.uniform4f(this.uniforms.u_screenRect, k * x0 + tx, k * y0 + ty, k * x1 + tx, k * y1 + ty);
+    gl.uniform4f(
+      this.uniforms.u_texelRect,
+      x0 / stride - originX,
+      y0 / stride - originY,
+      x1 / stride - originX,
+      y1 / stride - originY,
     );
+    gl.uniform2f(this.uniforms.u_map, placement.scale, placement.offset);
+    const [r, g, b, a] = this.noData;
+    gl.uniform4f(this.uniforms.u_noData, r / 255, g / 255, b / 255, a / 255);
 
-    // Set value range for color mapping
-    // Note: For 8-bit luminance texture, the shader sees values in [0,1] already normalized
-    gl.uniform1f(this.minValueLocation, 0.0);
-    gl.uniform1f(this.maxValueLocation, 1.0);
-
-    // Bind position buffer
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-    gl.enableVertexAttribArray(this.positionLocation);
-    gl.vertexAttribPointer(this.positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-    // Create custom texture coordinates for the region
-    const texRight = texX + texW;
-    const texBottom = texY + texH;
-    const texCoords = new Float32Array([
-      texX,
-      texY,
-      texRight,
-      texY,
-      texX,
-      texBottom,
-      texX,
-      texBottom,
-      texRight,
-      texY,
-      texRight,
-      texBottom,
-    ]);
-
-    // Update texture coordinate buffer
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.texCoordBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.DYNAMIC_DRAW);
-    gl.enableVertexAttribArray(this.texCoordLocation);
-    gl.vertexAttribPointer(this.texCoordLocation, 2, gl.FLOAT, false, 0, 0);
-
-    // Bind data texture to unit 0
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tileTexture.texture);
-    gl.uniform1i(this.dataTextureLocation, 0);
-
-    // Bind palette texture to unit 1
+    gl.uniform1i(this.uniforms.u_data, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.paletteTexture);
-    gl.uniform1i(this.paletteTextureLocation, 1);
+    gl.uniform1i(this.uniforms.u_palette, 1);
 
-    // Draw the quad
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.bindVertexArray(null);
   }
 
   /**
    * Clean up WebGL resources
    */
   dispose(): void {
+    this.canvas.removeEventListener('webglcontextlost', this.handleLost);
+    this.canvas.removeEventListener('webglcontextrestored', this.handleRestored);
+    if (this.lost) return;
     const gl = this.gl;
     gl.deleteProgram(this.program);
-    gl.deleteBuffer(this.positionBuffer);
-    gl.deleteBuffer(this.texCoordBuffer);
+    gl.deleteBuffer(this.buffer);
+    gl.deleteVertexArray(this.vao);
     gl.deleteTexture(this.paletteTexture);
   }
 }

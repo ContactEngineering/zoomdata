@@ -59,10 +59,14 @@ export interface ZoomDataOptions {
   zoomLevelIncrement?: number;
   /** Color palette to use (array of 32-bit RGBA integers) */
   colorPalette?: number[];
-  /** Minimum data value for color mapping */
+  /** Value mapped to the first palette entry, in physical units (default: data minimum) */
   minValue?: number;
-  /** Maximum data value for color mapping */
+  /** Value mapped to the last palette entry, in physical units (default: data maximum) */
   maxValue?: number;
+  /** Colour of undefined points, 32-bit ABGR like palette entries (default: transparent) */
+  noDataColor?: number;
+  /** Colour behind the image, 32-bit ABGR (default: light grey) */
+  backgroundColor?: number;
   /** Enable debug rendering (tile borders) */
   debug?: boolean;
 }

@@ -80,8 +80,6 @@ async function init(): Promise<void> {
   const zoomData = new ZoomData({
     source: new StaticTileSource(DATA_URL),
     colorPalette: currentPalette,
-    minValue: 0.0,
-    maxValue: 1.0,
     zoomLevelIncrement: 0.1,
   });
 

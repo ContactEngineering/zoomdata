@@ -16,8 +16,6 @@ import { ZoomData, Palettes } from 'zoomdata';
 const viewer = new ZoomData({
   rootUrl: 'http://localhost:8000/data/',
   colorPalette: Palettes.inferno(256),
-  minValue: 0.0,
-  maxValue: 1.0,
 });
 
 await viewer.start('canvasId');
@@ -34,6 +32,8 @@ const source: TileSource = {
 };
 const viewer = new ZoomData({ source });
 ```
+
+The viewer needs WebGL2; check with `supportsWebGL2()` to fall back.
 
 ## Development
 
@@ -150,14 +150,17 @@ const viewer = new ZoomData(options: ZoomDataOptions);
 
 #### Options
 
-| Option               | Type       | Default                 | Description                        |
-| -------------------- | ---------- | ----------------------- | ---------------------------------- |
-| `rootUrl`            | `string`   | required                | URL where `dzdata.json` is located |
-| `colorPalette`       | `number[]` | `Palettes.inferno(256)` | Color palette array                |
-| `minValue`           | `number`   | `0.0`                   | Minimum data value                 |
-| `maxValue`           | `number`   | `1.0`                   | Maximum data value                 |
-| `zoomLevelIncrement` | `number`   | `0.1`                   | Zoom change per scroll             |
-| `debug`              | `boolean`  | `false`                 | Show tile borders                  |
+| Option               | Type         | Default                 | Description                                         |
+| -------------------- | ------------ | ----------------------- | --------------------------------------------------- |
+| `source`             | `TileSource` | –                       | Where descriptor and tiles come from                |
+| `rootUrl`            | `string`     | –                       | Shortcut for a `StaticTileSource`                   |
+| `colorPalette`       | `number[]`   | `Palettes.inferno(256)` | Color palette array                                 |
+| `minValue`           | `number`     | data minimum            | Value of the first palette entry, in physical units |
+| `maxValue`           | `number`     | data maximum            | Value of the last palette entry, in physical units  |
+| `noDataColor`        | `number`     | transparent             | Colour of undefined points (ABGR)                   |
+| `backgroundColor`    | `number`     | light grey              | Colour behind the image (ABGR)                      |
+| `zoomLevelIncrement` | `number`     | `0.1`                   | Zoom change per scroll                              |
+| `debug`              | `boolean`    | `false`                 | Show tile borders                                   |
 
 #### Methods
 

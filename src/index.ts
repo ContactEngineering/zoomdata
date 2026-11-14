@@ -18,7 +18,8 @@ export { PyramidGeometry } from './PyramidGeometry';
 export type { PixelRect, TileAddress } from './PyramidGeometry';
 export { StaticTileSource } from './TileSource';
 export type { TileSource } from './TileSource';
-export { WebGLRenderer } from './WebGLRenderer';
+export { WebGLRenderer, supportsWebGL2 } from './WebGLRenderer';
+export type { ViewTransform } from './WebGLRenderer';
 
 // Types
 export type {

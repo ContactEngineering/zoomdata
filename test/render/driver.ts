@@ -8,18 +8,12 @@ import { ZoomData } from '../../src/ZoomData';
 import type { RGB, Reference, View } from './harness';
 import { fixtureUrl, testPalette } from './harness';
 
-/**
- * The current renderer does not draw the reference image: it quantises
- * values to 8 bits and filters them linearly, stretches partial tiles at the
- * right and bottom edges to a full tile, and misplaces fallback tiles because
- * it ignores their overlap. Undefined points and format version 2 are not
- * supported. All render tests are expected to fail until this is fixed.
- */
-export const KNOWN_BROKEN = true;
+/** Set while the renderer is known not to draw the reference image */
+export const KNOWN_BROKEN = false;
 
 /** Colour the canvas is cleared to (0.95 grey) */
 export const BACKGROUND: RGB = [242, 242, 242];
-/** Undefined points; the current renderer has no no-data colour */
+/** Undefined points */
 export const NO_DATA: RGB = [255, 0, 255];
 
 export interface Driver {
@@ -29,6 +23,10 @@ export interface Driver {
   /** Render the view with whatever is cached, without waiting */
   renderNow(view: View): Uint8Array;
   setColorRange(min: number, max: number): void;
+  /** Number of tile fetches so far */
+  tileFetches(): number;
+  /** Lose the WebGL context and wait until it is restored */
+  loseContext(): Promise<void>;
   /** Delay fetches of tiles whose URL matches; returns a release function */
   blockTiles(pattern: RegExp): () => void;
   dispose(): void;
@@ -44,9 +42,11 @@ interface ZoomDataInternals {
 }
 
 const blocked: { pattern: RegExp; release: Promise<void> }[] = [];
+let tileFetches = 0;
 const originalFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (url.includes('/dzdata_files/')) tileFetches++;
   for (const b of blocked) {
     if (b.pattern.test(url)) await b.release;
   }
@@ -81,17 +81,12 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
   canvas.height = height;
   document.body.appendChild(canvas);
 
-  // The current viewer maps tile values (normalised to [0, 1] for format
-  // version 1) rather than physical values to colours
-  const { Minimum: mn, Maximum: mx } = ref.colorbarRange;
-  const toNorm = (h: number) => (mx > mn ? (h - mn) / (mx - mn) : h - mn);
-  const [cmin, cmax] = colorRange ?? [mn, mx];
-
   const viewer = new ZoomData({
     source: options.source ?? new StaticTileSource(fixtureUrl(ref.name)),
     colorPalette: testPalette(),
-    minValue: toNorm(cmin),
-    maxValue: toNorm(cmax),
+    minValue: colorRange?.[0],
+    maxValue: colorRange?.[1],
+    noDataColor: (NO_DATA[0] | (NO_DATA[1] << 8) | (NO_DATA[2] << 16) | (255 << 24)) >>> 0,
   });
   await viewer.start(canvas);
   const internals = viewer as unknown as ZoomDataInternals;
@@ -122,7 +117,24 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
       return readPixels(canvas);
     },
     setColorRange(min, max) {
-      viewer.setColorRange(toNorm(min), toNorm(max));
+      viewer.setColorRange(min, max);
+    },
+    tileFetches: () => tileFetches,
+    async loseContext() {
+      const gl = canvas.getContext('webgl2')!;
+      const ext = gl.getExtension('WEBGL_lose_context')!;
+      const lost = new Promise((r) =>
+        canvas.addEventListener('webglcontextlost', r, { once: true }),
+      );
+      ext.loseContext();
+      await lost;
+      // Restoring from within the task that delivered the event is ignored
+      await new Promise((r) => setTimeout(r, 0));
+      const restored = new Promise((r) =>
+        canvas.addEventListener('webglcontextrestored', r, { once: true }),
+      );
+      ext.restoreContext();
+      await restored;
     },
     blockTiles(pattern) {
       let release!: () => void;

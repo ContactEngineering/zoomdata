@@ -41,8 +41,10 @@ export class ZoomData {
 
   // Color mapping options
   private colorPalette: number[];
-  private minValue: number;
-  private maxValue: number;
+  private minValue: number | undefined;
+  private maxValue: number | undefined;
+  private readonly noDataColor: number | undefined;
+  private readonly backgroundColor: number | undefined;
 
   // Crosshair state (image pixel coordinates, null = not placed)
   private crosshairImageX: number | null = null;
@@ -81,8 +83,10 @@ export class ZoomData {
 
     // Store color mapping options
     this.colorPalette = options.colorPalette ?? Palettes.inferno(256);
-    this.minValue = options.minValue ?? 0.0;
-    this.maxValue = options.maxValue ?? 1.0;
+    this.minValue = options.minValue;
+    this.maxValue = options.maxValue;
+    this.noDataColor = options.noDataColor;
+    this.backgroundColor = options.backgroundColor;
   }
 
   /**
@@ -143,7 +147,14 @@ export class ZoomData {
 
     // Create tiled image with WebGL renderer
     this.tiledImage = new TiledImage(this.config, 100);
-    this.tiledImage.initRenderer(this.canvas, this.colorPalette, this.minValue, this.maxValue);
+    // The colour range defaults to the range of the data
+    const { encoding, colorbarRange } = this.config.descriptor;
+    this.minValue ??= colorbarRange?.Minimum ?? encoding.addOffset;
+    this.maxValue ??= colorbarRange?.Maximum ?? encoding.addOffset + encoding.scaleFactor;
+    this.tiledImage.initRenderer(this.canvas, this.colorPalette, this.minValue, this.maxValue, {
+      noData: this.noDataColor,
+      background: this.backgroundColor,
+    });
 
     // Set up tile load callback for re-rendering
     this.tiledImage.onTilesLoaded = () => {

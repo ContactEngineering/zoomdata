@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { supportsWebGL2 } from '../../src/WebGLRenderer';
 import { StaticTileSource, type TileSource } from '../../src/TileSource';
 import {
   BACKGROUND,
@@ -125,6 +126,39 @@ describe('colour range', () => {
     await driver.render(view);
     driver.setColorRange(...range);
     await check('colour range', ref, await driver.render(view), view, { colorRange: range });
+  });
+});
+
+describe('WebGL2 renderer', () => {
+  it('is supported in the test browser', () => {
+    expect(supportsWebGL2()).toBe(true);
+  });
+
+  test('changes the colour range without re-uploading textures', async () => {
+    const { ref, driver } = await setup('pattern-ov1');
+    const view = { k: 1, tx: 5, ty: 3 };
+    await driver.render(view);
+    const proto = WebGL2RenderingContext.prototype;
+    const upload = vi.spyOn(proto, 'texImage2D');
+    try {
+      const { Minimum: mn, Maximum: mx } = ref.colorbarRange;
+      const range: [number, number] = [mn, (mn + mx) / 2];
+      driver.setColorRange(...range);
+      await check('range no upload', ref, driver.renderNow(view), view, { colorRange: range });
+      expect(upload).not.toHaveBeenCalled();
+    } finally {
+      upload.mockRestore();
+    }
+  });
+
+  test('restores after context loss without refetching tiles', async () => {
+    const { ref, driver } = await setup('nan-v2');
+    const view = { k: 1, tx: 5, ty: 3 };
+    await driver.render(view);
+    const fetches = driver.tileFetches();
+    await driver.loseContext();
+    await check('context loss', ref, driver.renderNow(view), view);
+    expect(driver.tileFetches()).toBe(fetches);
   });
 });
 
