@@ -1,6 +1,7 @@
 /**
  * Shared type definitions for the zoomdata library
  */
+import type { TileSource } from './TileSource';
 
 /** Size dimensions for images */
 export interface ImageSize {
@@ -32,8 +33,10 @@ export interface TileCoordinate {
 
 /** Options for initializing ZoomData */
 export interface ZoomDataOptions {
+  /** Where the descriptor and tiles come from; takes precedence over rootUrl */
+  source?: TileSource;
   /** Root URL where dzdata.json and dzdata_files/ are located */
-  rootUrl: string;
+  rootUrl?: string;
   /** Zoom level change per scroll increment (default: 0.1) */
   zoomLevelIncrement?: number;
   /** Color palette to use (array of 32-bit RGBA integers) */

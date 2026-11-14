@@ -23,6 +23,18 @@ const viewer = new ZoomData({
 await viewer.start('canvasId');
 ```
 
+`rootUrl` is a shortcut for `source: new StaticTileSource(rootUrl)`. To serve
+tiles from elsewhere, e.g. with a presigned URL per tile, implement the
+`TileSource` interface:
+
+```typescript
+const source: TileSource = {
+  descriptor: () => fetch(descriptorUrl).then((r) => r.json()),
+  tileUrl: (level, col, row) => api.signedTileUrl(level, col, row),
+};
+const viewer = new ZoomData({ source });
+```
+
 ## Development
 
 ### Prerequisites

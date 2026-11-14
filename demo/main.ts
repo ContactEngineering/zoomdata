@@ -11,6 +11,7 @@ import {
   plasma,
   grayscale,
   Colorbar,
+  StaticTileSource,
 } from '../src/index';
 
 import { Scalebar } from '../src/Scalebar';
@@ -77,7 +78,7 @@ async function init(): Promise<void> {
   // Note: NetCDF data is pre-normalized to [0, 1] range
   // The dzdata.json ColorbarRange is for display labels only
   const zoomData = new ZoomData({
-    rootUrl: DATA_URL,
+    source: new StaticTileSource(DATA_URL),
     colorPalette: currentPalette,
     minValue: 0.0,
     maxValue: 1.0,

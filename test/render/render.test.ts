@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { BACKGROUND, KNOWN_BROKEN, NO_DATA, createDriver, type Driver } from './driver';
+import { StaticTileSource, type TileSource } from '../../src/TileSource';
+import {
+  BACKGROUND,
+  KNOWN_BROKEN,
+  NO_DATA,
+  createDriver,
+  type Driver,
+  type DriverOptions,
+} from './driver';
 import {
   compare,
   expectedImage,
+  fixtureUrl,
   formatComparison,
   loadReference,
   writeDiagnostics,
@@ -24,9 +33,9 @@ afterEach(() => {
   driver = null;
 });
 
-async function setup(name: string, colorRange?: [number, number]) {
+async function setup(name: string, options: Omit<DriverOptions, 'width' | 'height'> = {}) {
   const ref = await loadReference(name);
-  driver = await createDriver(ref, WIDTH, HEIGHT, colorRange);
+  driver = await createDriver(ref, { width: WIDTH, height: HEIGHT, ...options });
   return { ref, driver };
 }
 
@@ -84,6 +93,29 @@ for (const fixture of ['pattern-ov1', 'pattern-ov0', 'pattern-ov2']) {
   });
 }
 
+describe('tile source', () => {
+  // Tiles are addressed only through the source; this one hands out a
+  // different, query-signed URL per tile, as a host with presigned URLs would
+  test('renders tiles from per-tile URLs', async () => {
+    const ref = await loadReference('pattern-ov1');
+    const inner = new StaticTileSource(fixtureUrl('pattern-ov1'));
+    const requested: string[] = [];
+    const source: TileSource = {
+      descriptor: () => inner.descriptor(),
+      async tileUrl(level, col, row) {
+        const url = `${await inner.tileUrl(level, col, row)}?sig=${level}-${col}-${row}`;
+        requested.push(url);
+        return url;
+      },
+    };
+    const { driver } = await setup('pattern-ov1', { source });
+    const view = { k: 1, tx: 5, ty: 3 };
+    const pixels = await driver.render(view);
+    expect(requested).toContain(`${fixtureUrl('pattern-ov1')}dzdata_files/8/0_0.nc?sig=8-0-0`);
+    await check('tile source', ref, pixels, view);
+  });
+});
+
 describe('colour range', () => {
   test('maps a narrower range and clamps outside it', async () => {
     const { ref, driver } = await setup('pattern-ov1');
@@ -110,7 +142,7 @@ describe('undefined points and format version 2', () => {
   }
 
   test('flat-v2: constant map', async () => {
-    const { ref, driver } = await setup('flat-v2', [0, 1]);
+    const { ref, driver } = await setup('flat-v2', { colorRange: [0, 1] });
     const view = { k: 2, tx: 7, ty: 5 };
     await check('flat-v2', ref, await driver.render(view), view, { colorRange: [0, 1] });
   });

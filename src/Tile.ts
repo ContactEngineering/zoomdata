@@ -6,7 +6,7 @@ import { TileState } from './types';
  * Stores raw float data for GPU-based color mapping.
  */
 export class Tile {
-  private readonly url: string;
+  private readonly url: string | (() => Promise<string | null>);
   private data: Float32Array | null = null;
   private state: TileState = TileState.Pending;
   private error: Error | null = null;
@@ -21,9 +21,10 @@ export class Tile {
 
   /**
    * Create a new Tile
-   * @param url - URL to fetch the NetCDF tile data from
+   * @param url - URL to fetch the NetCDF tile data from, or a function that
+   *   resolves it when the tile is fetched (null if the tile does not exist)
    */
-  constructor(url: string) {
+  constructor(url: string | (() => Promise<string | null>)) {
     this.url = url;
   }
 
@@ -92,7 +93,11 @@ export class Tile {
    */
   private async doFetch(): Promise<void> {
     try {
-      const response = await fetch(this.url);
+      const url = typeof this.url === 'string' ? this.url : await this.url();
+      if (url === null) {
+        throw new Error('Tile not available');
+      }
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);

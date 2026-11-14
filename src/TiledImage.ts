@@ -114,8 +114,8 @@ export class TiledImage {
     let tile = this.tileCache.get(cacheKey);
 
     if (!tile) {
-      const url = this.config.getTileUrl(level, row, col);
-      tile = new Tile(url);
+      const source = this.config.source;
+      tile = new Tile(() => source.tileUrl(level, col, row));
       this.tileCache.set(cacheKey, tile);
     }
 

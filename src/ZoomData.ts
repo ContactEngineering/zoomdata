@@ -1,6 +1,7 @@
 import { Palettes } from './palettes';
 import { ZoomConfiguration } from './ZoomConfiguration';
 import { TiledImage } from './TiledImage';
+import { toTileSource, type TileSource } from './TileSource';
 import type { ZoomDataOptions } from './types';
 import { LineScanRenderer, LineScanData } from './LineScanRenderer';
 
@@ -9,7 +10,7 @@ import { LineScanRenderer, LineScanData } from './LineScanRenderer';
  * Handles canvas interaction (zoom, pan) and orchestrates rendering.
  */
 export class ZoomData {
-  private readonly rootUrl: string;
+  private readonly source: TileSource;
   private readonly zoomLevelIncrement: number;
 
   private canvas: HTMLCanvasElement | null = null;
@@ -62,7 +63,11 @@ export class ZoomData {
    * @param options - Configuration options
    */
   constructor(options: ZoomDataOptions) {
-    this.rootUrl = options.rootUrl;
+    const source = options.source ?? options.rootUrl;
+    if (source === undefined) {
+      throw new Error('ZoomData: either source or rootUrl is required');
+    }
+    this.source = toTileSource(source);
     this.zoomLevelIncrement = options.zoomLevelIncrement ?? 0.1;
 
     // Bind methods for event handlers
@@ -125,7 +130,7 @@ export class ZoomData {
     }
 
     // Load configuration
-    this.config = new ZoomConfiguration(this.rootUrl);
+    this.config = new ZoomConfiguration(this.source);
     try {
       await this.config.fetch();
     } catch (err) {

@@ -3,6 +3,7 @@
  * harness that knows the viewer's API; it renders a view synchronously after
  * all tiles it needs have loaded and returns the canvas pixels.
  */
+import { StaticTileSource, type TileSource } from '../../src/TileSource';
 import { ZoomData } from '../../src/ZoomData';
 import type { RGB, Reference, View } from './harness';
 import { fixtureUrl, testPalette } from './harness';
@@ -66,12 +67,15 @@ function readPixels(canvas: HTMLCanvasElement): Uint8Array {
   return out;
 }
 
-export async function createDriver(
-  ref: Reference,
-  width = 200,
-  height = 160,
-  colorRange?: [number, number],
-): Promise<Driver> {
+export interface DriverOptions {
+  width?: number;
+  height?: number;
+  colorRange?: [number, number];
+  source?: TileSource;
+}
+
+export async function createDriver(ref: Reference, options: DriverOptions = {}): Promise<Driver> {
+  const { width = 200, height = 160, colorRange } = options;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -84,7 +88,7 @@ export async function createDriver(
   const [cmin, cmax] = colorRange ?? [mn, mx];
 
   const viewer = new ZoomData({
-    rootUrl: fixtureUrl(ref.name),
+    source: options.source ?? new StaticTileSource(fixtureUrl(ref.name)),
     colorPalette: testPalette(),
     minValue: toNorm(cmin),
     maxValue: toNorm(cmax),

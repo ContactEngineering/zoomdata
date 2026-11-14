@@ -14,6 +14,10 @@ export { Tile } from './Tile';
 export { TileCache } from './TileCache';
 export { TiledImage } from './TiledImage';
 export { ZoomConfiguration } from './ZoomConfiguration';
+export { PyramidGeometry } from './PyramidGeometry';
+export type { PixelRect, TileAddress } from './PyramidGeometry';
+export { StaticTileSource } from './TileSource';
+export type { TileSource } from './TileSource';
 export { WebGLRenderer } from './WebGLRenderer';
 
 // Types
