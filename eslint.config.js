@@ -1,14 +1,15 @@
 import js from '@eslint/js';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import pluginVue from 'eslint-plugin-vue';
 import eslintConfigPrettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['dist', 'coverage', 'node_modules', 'venv', 'docs', 'examples'],
+    ignores: ['dist', 'coverage', 'node_modules', 'venv', 'docs', 'examples', 'demo/data'],
   },
   {
-    files: ['src/**/*.ts', 'demo/**/*.ts', '*.ts'],
+    files: ['src/**/*.ts', 'demo/**/*.ts', 'test/**/*.ts', '*.ts'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       globals: {
@@ -21,6 +22,15 @@ export default tseslint.config(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+    },
+  },
+  // The demo application
+  ...pluginVue.configs['flat/recommended'],
+  {
+    files: ['demo/**/*.vue'],
+    languageOptions: {
+      parserOptions: { parser: tseslint.parser },
+      globals: globals.browser,
     },
   },
   eslintConfigPrettier,

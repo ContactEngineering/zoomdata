@@ -1,6 +1,8 @@
 /**
  * Shared type definitions for the zoomdata library
  */
+import type { TileLoaderOptions } from './TileLoader';
+import type { TileSource } from './TileSource';
 
 /** Size dimensions for images */
 export interface ImageSize {
@@ -8,18 +10,36 @@ export interface ImageSize {
   Height: number;
 }
 
-/** Deep Zoom Image metadata structure (from dzdata.json) */
+/**
+ * Pyramid descriptor (dzdata.json), see docs/pyramid-format.md
+ */
 export interface DZIMetadata {
   Image: {
     Size: ImageSize;
     TileSize: number;
     Overlap: number;
+    /** Tile format; only 'nc' is supported */
+    Format?: string;
+    /** Version of the NetCDF tile format (default 1) */
+    FormatVersion?: number;
     ColorbarRange?: {
       Minimum: number;
       Maximum: number;
     };
     ColorbarTitle?: string;
     PixelsPerMeter?: ImageSize;
+    /** Linear encoding of tile values (format version 2) */
+    Encoding?: {
+      ScaleFactor: number;
+      AddOffset: number;
+    };
+    /** Unit of the height values */
+    Unit?: string;
+    /** Detrend mode applied to the data before writing */
+    Detrend?: string;
+    /** How coarse levels were computed: 'mean' or 'nearest' */
+    Downsample?: string;
+    Colormap?: string;
   };
 }
 
@@ -32,18 +52,36 @@ export interface TileCoordinate {
 
 /** Options for initializing ZoomData */
 export interface ZoomDataOptions {
+  /** Where the descriptor and tiles come from; takes precedence over rootUrl */
+  source?: TileSource;
   /** Root URL where dzdata.json and dzdata_files/ are located */
-  rootUrl: string;
-  /** Zoom level change per scroll increment (default: 0.1) */
+  rootUrl?: string;
+  /** Zoom level change per wheel notch (default: 0.25) */
   zoomLevelIncrement?: number;
+  /** Transparent canvas on top of the main canvas for the crosshair */
+  crosshairCanvas?: HTMLCanvasElement;
+  /** Canvas for the horizontal cross-section through the crosshair */
+  horizontalScanCanvas?: HTMLCanvasElement;
+  /** Canvas for the vertical cross-section through the crosshair */
+  verticalScanCanvas?: HTMLCanvasElement;
+  /** Install the default mouse, touch and keyboard controller (default: true) */
+  controller?: boolean;
+  /** Follow the canvas' CSS size and the device pixel ratio (default: true) */
+  autoResize?: boolean;
   /** Color palette to use (array of 32-bit RGBA integers) */
   colorPalette?: number[];
-  /** Minimum data value for color mapping */
+  /** Value mapped to the first palette entry, in physical units (default: data minimum) */
   minValue?: number;
-  /** Maximum data value for color mapping */
+  /** Value mapped to the last palette entry, in physical units (default: data maximum) */
   maxValue?: number;
-  /** Enable debug rendering (tile borders) */
-  debug?: boolean;
+  /** Colour of undefined points, 32-bit ABGR like palette entries (default: transparent) */
+  noDataColor?: number;
+  /** Colour behind the image, 32-bit ABGR (default: light grey) */
+  backgroundColor?: number;
+  /** Concurrency and retries of tile requests */
+  loader?: TileLoaderOptions;
+  /** Memory budget for tiles in bytes, CPU and GPU (default: 256 MiB) */
+  cacheBytes?: number;
 }
 
 /** State of a tile in the cache */

@@ -4,8 +4,8 @@
  */
 
 export interface LineScanData {
-  values: Float32Array;
-  positions: Float32Array;
+  values: ArrayLike<number>;
+  positions: ArrayLike<number>;
   crosshairPos: number;
   posMin: number;
   posMax: number;
@@ -57,7 +57,12 @@ export class LineScanRenderer {
     ctx.font = '11px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('double-click on image to place crosshair', canvas.width / 2, canvas.height / 2);
+    // Along the long side of the canvas
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    if (canvas.height > canvas.width) ctx.rotate(-Math.PI / 2);
+    ctx.fillText('double-click on image to place crosshair', 0, 0);
+    ctx.restore();
   }
 
   /**
@@ -174,7 +179,11 @@ export class LineScanRenderer {
       const n = data.values.length;
       for (let i = 0; i < n; i++) {
         const v = data.values[i];
-        if (!isFinite(v)) continue;
+        // Break the trace where data is undefined
+        if (!isFinite(v)) {
+          firstPoint = true;
+          continue;
+        }
         const p = data.positions[i];
         const px = isVertical ? vValToX(v) : hPosToX(p);
         const py = isVertical ? vPosToY(p) : hValToY(v);
@@ -230,7 +239,11 @@ export class LineScanRenderer {
     ctx.lineWidth = 1;
 
     // Value grid lines
-    for (const t of this.niceTicks(vLo, vHi, 4)) {
+    for (const t of this.niceTicks(
+      vLo,
+      vHi,
+      isVertical ? Math.max(1, Math.floor(plotW / 45)) : 4,
+    )) {
       if (t < vLo || t > vHi) continue;
       ctx.beginPath();
       if (!isVertical) {
@@ -292,8 +305,13 @@ export class LineScanRenderer {
 
     ctx.font = '10px monospace';
 
-    //  Value axis ticks & labels
-    for (const t of this.niceTicks(vLo, vHi, 4)) {
+    //  Value axis ticks & labels; in a vertical scan the value axis is the
+    //  short horizontal one, so the number of ticks follows its width
+    for (const t of this.niceTicks(
+      vLo,
+      vHi,
+      isVertical ? Math.max(1, Math.floor(plotW / 45)) : 4,
+    )) {
       if (t < vLo || t > vHi) continue;
       const label = this.formatTick(t);
       if (!isVertical) {

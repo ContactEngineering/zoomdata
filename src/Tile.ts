@@ -1,30 +1,36 @@
-import { NetCDFReader } from 'netcdfjs';
+import { decodeTile, type ValueEncoding } from './TileDecoder';
 import { TileState } from './types';
 
+export interface TileOptions {
+  /** Expected width and height; a tile of another shape is rejected */
+  expectedShape?: { width: number; height: number };
+  /** Encoding used when the tile carries no scale_factor/add_offset */
+  encoding?: ValueEncoding;
+}
+
 /**
- * Represents a single tile from a deep zoom image stack.
- * Stores raw float data for GPU-based color mapping.
+ * A single tile of the pyramid: its loading state and, once loaded, its
+ * values as float32 for GPU-based color mapping. Tiles are fetched by the
+ * TileLoader.
  */
 export class Tile {
-  private readonly url: string;
+  private readonly options: TileOptions;
   private data: Float32Array | null = null;
+  private encoding: ValueEncoding = { scaleFactor: 1, addOffset: 0 };
   private state: TileState = TileState.Pending;
   private error: Error | null = null;
-  private fetchPromise: Promise<void> | null = null;
-  xCoords: Float32Array | null = null;
-  yCoords: Float32Array | null = null;
 
-  /** Width of the tile in pixels (set after fetch) */
+  /** Width of the tile in pixels (set after load) */
   width: number = 0;
-  /** Height of the tile in pixels (set after fetch) */
+  /** Height of the tile in pixels (set after load) */
   height: number = 0;
 
   /**
    * Create a new Tile
-   * @param url - URL to fetch the NetCDF tile data from
+   * @param options - Expected shape and default encoding
    */
-  constructor(url: string) {
-    this.url = url;
+  constructor(options: TileOptions = {}) {
+    this.options = options;
   }
 
   /**
@@ -32,6 +38,14 @@ export class Tile {
    */
   getState(): TileState {
     return this.state;
+  }
+
+  /**
+   * Set the loading state (used by the loader)
+   */
+  setState(state: TileState.Pending | TileState.Loading): void {
+    this.state = state;
+    this.error = null;
   }
 
   /**
@@ -49,140 +63,60 @@ export class Tile {
   }
 
   /**
-   * Get the raw data for GPU texture creation
+   * Decode the contents of the tile file; marks the tile as failed and
+   * throws if they are invalid
+   */
+  load(buffer: ArrayBuffer): void {
+    try {
+      const decoded = decodeTile(buffer, this.options.expectedShape);
+      this.width = decoded.width;
+      this.height = decoded.height;
+      this.data = decoded.values;
+      this.encoding = decoded.encoding ?? this.options.encoding ?? { scaleFactor: 1, addOffset: 0 };
+      this.state = TileState.Ready;
+      this.error = null;
+    } catch (err) {
+      this.fail(err instanceof Error ? err : new Error(String(err)));
+      throw err;
+    }
+  }
+
+  /**
+   * Mark the tile as failed
+   */
+  fail(error: Error): void {
+    this.state = TileState.Error;
+    this.error = error;
+  }
+
+  /**
+   * Get the stored values, row-major (y, x), NaN where undefined. Physical
+   * values are `addOffset + scaleFactor * v`, see getEncoding().
    */
   getData(): Float32Array | null {
     return this.data;
   }
 
-  /** get the x coordinates and y coordinates in micrometers */
-
-  getXCoords(): Float32Array | null {
-    return this.xCoords;
-  }
-
-  getYCoords(): Float32Array | null {
-    return this.yCoords;
+  /**
+   * Get the encoding of the stored values
+   */
+  getEncoding(): ValueEncoding {
+    return this.encoding;
   }
 
   /**
-   * Fetch the tile data from the server
-   * @returns Promise that resolves when data is loaded
+   * Physical value at a tile pixel, computed in double precision
    */
-  async fetch(): Promise<void> {
-    // Return existing promise if already fetching
-    if (this.fetchPromise) {
-      return this.fetchPromise;
-    }
-
-    // Return immediately if already loaded
-    if (this.data && this.state === TileState.Ready) {
-      return;
-    }
-
-    this.state = TileState.Loading;
-    this.error = null;
-
-    this.fetchPromise = this.doFetch();
-    return this.fetchPromise;
+  valueAt(x: number, y: number): number {
+    if (!this.data) return NaN;
+    return this.encoding.addOffset + this.encoding.scaleFactor * this.data[y * this.width + x];
   }
 
   /**
-   * Internal fetch implementation
+   * Bytes of tile data held in CPU memory
    */
-  private async doFetch(): Promise<void> {
-    try {
-      const response = await fetch(this.url);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      const reader = new NetCDFReader(arrayBuffer);
-
-      // Get the heights variable
-      const heights = reader.getDataVariable('heights');
-      if (!heights) {
-        throw new Error('NetCDF file missing "heights" variable');
-      }
-
-      const x = reader.getDataVariable('x'); // x and y values
-      if (!x) {
-        throw new Error('NetCDF file missing "x" variable');
-      }
-      const y = reader.getDataVariable('y');
-      if (!y) {
-        throw new Error('NetCDF file missing "y" variable');
-      }
-
-      // Get dimensions from the heights variable itself
-      const heightsVar = reader.variables.find((v) => v.name === 'heights');
-      if (!heightsVar) {
-        throw new Error('NetCDF file missing "heights" variable metadata');
-      }
-
-      // The variable's dimensions array contains indices into reader.dimensions
-      const varDimensions = heightsVar.dimensions.map((dimIndex) => reader.dimensions[dimIndex]);
-
-      if (varDimensions.length !== 2) {
-        throw new Error(`Expected 2D heights variable, got ${varDimensions.length}D`);
-      }
-
-      // We want an in-memory layout of data[y * width + x] (rows = y, cols = x)
-      // so the WebGL texture (uploaded as `width` × `height`) puts the x-axis
-      // horizontally on screen and y vertically. SurfaceTopography's NetCDF
-      // tiles store heights as (x, y) — first dim = x — so in that case we
-      // need to transpose into (y, x) layout. We detect this via the dim names.
-      const firstDimIsX = varDimensions[0].name === 'x' || varDimensions[0].name === 'column';
-      const raw = heights as number[];
-
-      if (firstDimIsX) {
-        // heights(x, y): first dim is x, second is y. Transpose to (y, x).
-        const xCount = varDimensions[0].size;
-        const yCount = varDimensions[1].size;
-        this.width = xCount;
-        this.height = yCount;
-        const transposed = new Float32Array(xCount * yCount);
-        for (let xi = 0; xi < xCount; xi++) {
-          for (let yi = 0; yi < yCount; yi++) {
-            transposed[yi * xCount + xi] = raw[xi * yCount + yi];
-          }
-        }
-        this.data = transposed;
-      } else {
-        // heights(y, x): first dim = y (rows), second = x (cols). Already in target layout.
-        this.height = varDimensions[0].size;
-        this.width = varDimensions[1].size;
-        this.data = new Float32Array(raw);
-      }
-
-      // Store x and y coordinates as Float32Arrays
-      this.xCoords = new Float32Array(x as number[]);
-      this.yCoords = new Float32Array(y as number[]);
-
-      // Debug: verify dimensions match data length
-      const expectedLength = this.width * this.height;
-      if (this.data.length !== expectedLength) {
-        console.error(
-          `Tile ${this.url}: dimension mismatch! width=${this.width}, height=${this.height}, expected=${expectedLength}, actual=${this.data.length}`,
-        );
-        console.error(`  varDimensions:`, varDimensions);
-      } else {
-        console.log(
-          `Tile ${this.url}: loaded ${this.width}x${this.height} = ${this.data.length} values`,
-        );
-      }
-
-      this.state = TileState.Ready;
-    } catch (err) {
-      this.state = TileState.Error;
-      this.error = err instanceof Error ? err : new Error(String(err));
-      this.fetchPromise = null;
-      throw this.error;
-    }
-
-    console.log('X coords:', this.xCoords, 'Y coords:', this.yCoords);
+  byteSize(): number {
+    return this.data?.byteLength ?? 0;
   }
 
   /**
@@ -190,7 +124,6 @@ export class Tile {
    */
   clearCache(): void {
     this.data = null;
-    this.fetchPromise = null;
     this.state = TileState.Pending;
   }
 }

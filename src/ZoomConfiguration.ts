@@ -1,13 +1,18 @@
-import type { ColorbarRange, DZIMetadata, ImageSize } from './types';
+import { parseDescriptor, type PyramidDescriptor } from './PyramidDescriptor';
+import { PyramidGeometry } from './PyramidGeometry';
+import { toTileSource, type TileSource } from './TileSource';
+import type { ColorbarRange, ImageSize } from './types';
 
 /**
- * Represents the global zoom configuration loaded from dzdata.json.
- * Contains information about image dimensions, tile size, and zoom levels.
+ * Represents the global zoom configuration loaded from the pyramid
+ * descriptor. Contains information about image dimensions, tile size, and
+ * zoom levels.
  */
 export class ZoomConfiguration {
-  readonly rootUrl: string;
-  readonly baseUrl: string;
+  readonly source: TileSource;
 
+  private _descriptor: PyramidDescriptor | null = null;
+  private _geometry: PyramidGeometry | null = null;
   private _imageSize: ImageSize | null = null;
   private _tileSize: number | null = null;
   private _overlap: number | null = null;
@@ -19,12 +24,10 @@ export class ZoomConfiguration {
 
   /**
    * Create a new ZoomConfiguration
-   * @param rootUrl - Root URL where dzdata.json is located
+   * @param source - Tile source, or root URL of a static pyramid
    */
-  constructor(rootUrl: string) {
-    // Ensure rootUrl ends with /
-    this.rootUrl = rootUrl.endsWith('/') ? rootUrl : `${rootUrl}/`;
-    this.baseUrl = `${this.rootUrl}dzdata_files/`;
+  constructor(source: TileSource | string) {
+    this.source = toTileSource(source);
   }
 
   /**
@@ -32,6 +35,22 @@ export class ZoomConfiguration {
    */
   get isLoaded(): boolean {
     return this._loaded;
+  }
+
+  /**
+   * Get the validated descriptor (throws if not loaded)
+   */
+  get descriptor(): PyramidDescriptor {
+    this.assertLoaded();
+    return this._descriptor!;
+  }
+
+  /**
+   * Get the pyramid geometry (throws if not loaded)
+   */
+  get geometry(): PyramidGeometry {
+    this.assertLoaded();
+    return this._geometry!;
   }
 
   /**
@@ -95,57 +114,30 @@ export class ZoomConfiguration {
   }
 
   /**
-   * Fetch and parse the dzdata.json configuration file
+   * Fetch and parse the pyramid descriptor
    * @returns This ZoomConfiguration instance (for chaining)
    */
   async fetch(): Promise<this> {
-    const url = `${this.rootUrl}dzdata.json`;
-
     try {
-      const response = await fetch(url);
+      const data = await this.source.descriptor();
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
+      const descriptor = parseDescriptor(data);
+      this._descriptor = descriptor;
+      this._imageSize = descriptor.size;
+      this._tileSize = descriptor.tileSize;
+      this._overlap = descriptor.overlap;
+      this._colorbarRange = descriptor.colorbarRange;
+      this._colorbarTitle = descriptor.colorbarTitle;
+      this._pixelsPerMeter = descriptor.pixelsPerMeter;
 
-      const data: DZIMetadata = await response.json();
-
-      // Validate required fields
-      if (!data.Image) {
-        throw new Error('Invalid dzdata.json: missing "Image" field');
-      }
-      if (
-        !data.Image.Size ||
-        typeof data.Image.Size.Width !== 'number' ||
-        typeof data.Image.Size.Height !== 'number'
-      ) {
-        throw new Error('Invalid dzdata.json: missing or invalid "Image.Size"');
-      }
-      if (typeof data.Image.TileSize !== 'number') {
-        throw new Error('Invalid dzdata.json: missing or invalid "Image.TileSize"');
-      }
-
-      this._imageSize = data.Image.Size;
-      this._tileSize = data.Image.TileSize;
-      this._overlap = data.Image.Overlap ?? 0;
-      this._colorbarRange = data.Image.ColorbarRange ?? null;
-      this._colorbarTitle = data.Image.ColorbarTitle ?? null;
-      this._pixelsPerMeter = data.Image.PixelsPerMeter ?? null;
-
-      // Calculate max zoom level based on DZI convention:
-      // - Level N has 2^N pixel resolution
-      // - At level log2(tileSize), one tile covers tileSize pixels at 1:1 scale
-      // - This is the "natural" max zoom level where scaleFactor = 1
-      // Higher levels (if they exist in the data) show sub-pixel zoom
-      this._maxZoomLevel = Math.ceil(
-        Math.log2(Math.max(this._imageSize!.Width, this._imageSize!.Height)),
-      );
+      this._geometry = new PyramidGeometry(this._imageSize, this._tileSize, this._overlap);
+      this._maxZoomLevel = this._geometry.maxLevel;
 
       this._loaded = true;
       return this;
     } catch (err) {
       if (err instanceof Error) {
-        throw new Error(`Failed to load zoom configuration from ${url}: ${err.message}`, {
+        throw new Error(`Failed to load zoom configuration: ${err.message}`, {
           cause: err,
         });
       }
@@ -194,17 +186,5 @@ export class ZoomConfiguration {
   clampZoomLevel(zoomLevel: number): number {
     this.assertLoaded();
     return Math.max(0, Math.min(this._maxZoomLevel!, zoomLevel));
-  }
-
-  /**
-   * Get the URL for a specific tile
-   * @param zoomLevel - The zoom level
-   * @param row - The row index
-   * @param column - The column index
-   * @returns Full URL to the tile file
-   */
-  getTileUrl(zoomLevel: number, row: number, column: number): string {
-    // DZI convention: files are named column_row (x_y)
-    return `${this.baseUrl}${zoomLevel}/${column}_${row}.nc`;
   }
 }

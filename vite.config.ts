@@ -12,14 +12,5 @@ export default defineConfig({
       name: 'ZoomData',
       fileName: 'zoomdata',
     },
-    rollupOptions: {
-      // Externalize dependencies that shouldn't be bundled
-      external: ['netcdfjs'],
-      output: {
-        globals: {
-          netcdfjs: 'NetCDFJS',
-        },
-      },
-    },
   },
 });

@@ -18,14 +18,16 @@
   ],
   "scripts": {
     "dev": "vite --config vite.demo.config.ts",
+    "demo:data": "python demo/make_demo_data.py",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && vue-tsc --noEmit -p demo/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "serve-data": "python cors_server.py",
     "test": "vitest",
+    "test:render": "vitest run --config vitest.browser.config.ts",
     "test:coverage": "vitest --coverage"
   },
   "keywords": [
@@ -36,20 +38,24 @@
   ],
   "author": "",
   "license": "MIT",
-  "dependencies": {
-    "netcdfjs": "^3.0.0"
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@vitejs/plugin-vue": "^6.0.11",
+    "@vitest/browser-playwright": "^4.1.5",
     "@vitest/coverage-v8": "^4.1.5",
     "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.12.1",
     "globals": "^17.6.0",
     "happy-dom": "^20.9.0",
+    "playwright": "^1.65.1",
     "prettier": "^3.8.3",
     "typescript": "^5.3.0",
     "typescript-eslint": "^8.60.0",
     "vite": "^5.0.0",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.5",
+    "vue": "^3.5.45",
+    "vue-eslint-parser": "^10.4.2",
+    "vue-tsc": "^3.3.14"
   }
 }

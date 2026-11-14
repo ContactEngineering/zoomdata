@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { StaticTileSource, type TileSource } from './TileSource';
 import { ZoomConfiguration } from './ZoomConfiguration';
 import type { DZIMetadata } from './types';
 
@@ -38,19 +39,21 @@ afterEach(() => {
 
 describe('ZoomConfiguration', () => {
   describe('constructor', () => {
-    it('appends a trailing slash when missing', () => {
+    it('wraps a root URL in a StaticTileSource', () => {
       const config = new ZoomConfiguration('http://example.com/data');
-      expect(config.rootUrl).toBe('http://example.com/data/');
+      expect(config.source).toBeInstanceOf(StaticTileSource);
+      expect((config.source as StaticTileSource).rootUrl).toBe('http://example.com/data/');
     });
 
-    it('preserves a trailing slash when already present', () => {
-      const config = new ZoomConfiguration('http://example.com/data/');
-      expect(config.rootUrl).toBe('http://example.com/data/');
-    });
-
-    it('derives baseUrl as rootUrl + dzdata_files/', () => {
-      const config = new ZoomConfiguration('http://example.com/data/');
-      expect(config.baseUrl).toBe('http://example.com/data/dzdata_files/');
+    it('uses a given tile source', async () => {
+      const source: TileSource = {
+        descriptor: () => Promise.resolve(VALID_METADATA),
+        tileUrl: () => Promise.resolve(null),
+      };
+      const config = new ZoomConfiguration(source);
+      await config.fetch();
+      expect(config.source).toBe(source);
+      expect(config.imageSize).toEqual({ Width: 4096, Height: 2048 });
     });
 
     it('is not loaded initially', () => {
@@ -246,19 +249,6 @@ describe('ZoomConfiguration', () => {
 
     it('accepts maxZoomLevel exactly', async () => {
       expect((await loadedConfig()).clampZoomLevel(12)).toBe(12);
-    });
-  });
-
-  describe('getTileUrl()', () => {
-    it('builds URL with column_row filename per DZI convention', async () => {
-      const config = await loadedConfig('http://example.com/data/');
-      // row=3, column=5 → filename is "5_3.nc" (column first)
-      expect(config.getTileUrl(12, 3, 5)).toBe('http://example.com/data/dzdata_files/12/5_3.nc');
-    });
-
-    it('includes the zoom level in the path', async () => {
-      const config = await loadedConfig('http://example.com/data/');
-      expect(config.getTileUrl(7, 0, 0)).toBe('http://example.com/data/dzdata_files/7/0_0.nc');
     });
   });
 });

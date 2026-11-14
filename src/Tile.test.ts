@@ -1,233 +1,63 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { Tile } from './Tile';
 import { TileState } from './types';
-import { NetCDFReader } from 'netcdfjs';
 
-vi.mock('netcdfjs', () => ({
-  NetCDFReader: vi.fn(),
-}));
-
-const fetchMock = vi.fn();
-
-function setupSuccessfulNetCDF(data: number[], rows: number, cols: number): void {
-  vi.mocked(NetCDFReader).mockImplementation(function () {
-    return {
-      getDataVariable: () => data,
-      variables: [{ name: 'heights', dimensions: [0, 1] }],
-      dimensions: [
-        { name: 'row', size: rows },
-        { name: 'col', size: cols },
-      ],
-    };
-  } as unknown as () => NetCDFReader);
-}
-
-function setupSuccessfulFetch(): void {
-  fetchMock.mockResolvedValue({
-    ok: true,
-    status: 200,
-    statusText: 'OK',
-    arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-  });
-}
-
-function setupFailedFetch(status: number): void {
-  fetchMock.mockResolvedValue({
-    ok: false,
-    status,
-    statusText: 'Error',
-    arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-  });
-}
-
-beforeEach(() => {
-  vi.stubGlobal('fetch', fetchMock);
-  setupSuccessfulFetch();
-  setupSuccessfulNetCDF([1.0, 2.0, 3.0, 4.0], 2, 2);
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-  fetchMock.mockReset();
-  vi.mocked(NetCDFReader).mockReset();
-});
+// 3 x 2 tile holding h[x, y] = 10 * x + y, scale_factor 2, add_offset -1
+const b = readFileSync(resolve(__dirname, '../test/fixtures/decoder/offset64.nc'));
+const TILE = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 
 describe('Tile', () => {
-  describe('initial state', () => {
-    it('starts in Pending state', () => {
-      expect(new Tile('http://example.com/tile.nc').getState()).toBe(TileState.Pending);
-    });
-
-    it('is not ready before fetch', () => {
-      expect(new Tile('http://example.com/tile.nc').isReady()).toBe(false);
-    });
-
-    it('has no data before fetch', () => {
-      expect(new Tile('http://example.com/tile.nc').getData()).toBeNull();
-    });
-
-    it('has no error before fetch', () => {
-      expect(new Tile('http://example.com/tile.nc').getError()).toBeNull();
-    });
+  it('starts in Pending state without data or error', () => {
+    const tile = new Tile();
+    expect(tile.getState()).toBe(TileState.Pending);
+    expect(tile.isReady()).toBe(false);
+    expect(tile.getData()).toBeNull();
+    expect(tile.getError()).toBeNull();
+    expect(tile.byteSize()).toBe(0);
   });
 
-  describe('successful fetch', () => {
-    it('transitions to Ready state', async () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      await tile.fetch();
-      expect(tile.getState()).toBe(TileState.Ready);
-    });
-
-    it('isReady() returns true', async () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      await tile.fetch();
-      expect(tile.isReady()).toBe(true);
-    });
-
-    it('populates data as Float32Array with the correct values', async () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      await tile.fetch();
-      expect(tile.getData()).toBeInstanceOf(Float32Array);
-      expect(tile.getData()).toEqual(new Float32Array([1.0, 2.0, 3.0, 4.0]));
-    });
-
-    it('sets width from the second NetCDF dimension (columns)', async () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      await tile.fetch();
-      expect(tile.width).toBe(2);
-    });
-
-    it('sets height from the first NetCDF dimension (rows)', async () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      await tile.fetch();
-      expect(tile.height).toBe(2);
-    });
-
-    it('has no error after successful fetch', async () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      await tile.fetch();
-      expect(tile.getError()).toBeNull();
-    });
+  it('decodes a tile row-major (y, x)', () => {
+    const tile = new Tile();
+    tile.load(TILE);
+    expect(tile.getState()).toBe(TileState.Ready);
+    expect(tile.isReady()).toBe(true);
+    expect([tile.width, tile.height]).toEqual([3, 2]);
+    expect([...tile.getData()!]).toEqual([0, 10, 20, 1, 11, 21]);
+    expect(tile.byteSize()).toBe(24);
   });
 
-  describe('fetch deduplication', () => {
-    it('issues only one network request for concurrent calls', async () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      await Promise.all([tile.fetch(), tile.fetch(), tile.fetch()]);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-    });
-
-    it('is a no-op when called again after a successful load', async () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      await tile.fetch();
-      const callsBefore = fetchMock.mock.calls.length;
-      await tile.fetch();
-      expect(fetchMock).toHaveBeenCalledTimes(callsBefore);
-    });
+  it('returns physical values using the tile encoding', () => {
+    const tile = new Tile({ encoding: { scaleFactor: 5, addOffset: 5 } });
+    tile.load(TILE);
+    // The tile's own CF attributes take precedence
+    expect(tile.getEncoding()).toEqual({ scaleFactor: 2, addOffset: -1 });
+    expect(tile.valueAt(2, 1)).toBe(-1 + 2 * 21);
   });
 
-  describe('error handling', () => {
-    it('transitions to Error state on HTTP failure', async () => {
-      setupFailedFetch(404);
-      const tile = new Tile('http://example.com/tile.nc');
-      await expect(tile.fetch()).rejects.toThrow('HTTP 404');
-      expect(tile.getState()).toBe(TileState.Error);
-    });
-
-    it('stores the error for inspection via getError()', async () => {
-      setupFailedFetch(500);
-      const tile = new Tile('http://example.com/tile.nc');
-      await expect(tile.fetch()).rejects.toThrow();
-      expect(tile.getError()).toBeInstanceOf(Error);
-    });
-
-    it('isReady() returns false after an error', async () => {
-      setupFailedFetch(404);
-      const tile = new Tile('http://example.com/tile.nc');
-      await expect(tile.fetch()).rejects.toThrow();
-      expect(tile.isReady()).toBe(false);
-    });
-
-    it('throws when the heights variable is absent from the NetCDF file', async () => {
-      vi.mocked(NetCDFReader).mockImplementation(function () {
-        return { getDataVariable: () => null, variables: [], dimensions: [] };
-      } as unknown as () => NetCDFReader);
-      await expect(new Tile('http://example.com/tile.nc').fetch()).rejects.toThrow(
-        'missing "heights" variable',
-      );
-    });
-
-    it('throws when the heights variable metadata is absent', async () => {
-      vi.mocked(NetCDFReader).mockImplementation(function () {
-        return {
-          getDataVariable: () => [1.0],
-          variables: [], // no 'heights' entry
-          dimensions: [{ name: 'x', size: 1 }],
-        };
-      } as unknown as () => NetCDFReader);
-      await expect(new Tile('http://example.com/tile.nc').fetch()).rejects.toThrow(
-        'missing "heights" variable metadata',
-      );
-    });
-
-    it('throws when the heights variable is not 2D', async () => {
-      vi.mocked(NetCDFReader).mockImplementation(function () {
-        return {
-          getDataVariable: () => [1.0, 2.0, 3.0],
-          variables: [{ name: 'heights', dimensions: [0] }], // 1D
-          dimensions: [{ name: 'x', size: 3 }],
-        };
-      } as unknown as () => NetCDFReader);
-      await expect(new Tile('http://example.com/tile.nc').fetch()).rejects.toThrow(
-        'Expected 2D heights variable',
-      );
-    });
+  it('rejects a tile of unexpected shape', () => {
+    const tile = new Tile({ expectedShape: { width: 2, height: 3 } });
+    expect(() => tile.load(TILE)).toThrow('expected 2 x 3');
+    expect(tile.getState()).toBe(TileState.Error);
+    expect(tile.getError()?.message).toContain('expected 2 x 3');
   });
 
-  describe('retry after error', () => {
-    it('allows a successful retry after a previous fetch failure', async () => {
-      setupFailedFetch(503);
-      const tile = new Tile('http://example.com/tile.nc');
-      await expect(tile.fetch()).rejects.toThrow();
-      expect(tile.getState()).toBe(TileState.Error);
-
-      setupSuccessfulFetch();
-      setupSuccessfulNetCDF([1.0, 2.0, 3.0, 4.0], 2, 2);
-      await tile.fetch();
-      expect(tile.getState()).toBe(TileState.Ready);
-    });
+  it('records failures and can be reset to Pending', () => {
+    const tile = new Tile();
+    tile.fail(new Error('HTTP 500'));
+    expect(tile.getState()).toBe(TileState.Error);
+    tile.setState(TileState.Pending);
+    expect(tile.getState()).toBe(TileState.Pending);
+    expect(tile.getError()).toBeNull();
   });
 
-  describe('clearCache()', () => {
-    it('resets a Ready tile to Pending', async () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      await tile.fetch();
-      tile.clearCache();
-      expect(tile.getState()).toBe(TileState.Pending);
-    });
-
-    it('clears the data', async () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      await tile.fetch();
-      tile.clearCache();
-      expect(tile.getData()).toBeNull();
-    });
-
-    it('resets state to Pending even when called during Loading', () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      tile.fetch(); // start without awaiting; state is set to Loading synchronously
-      expect(tile.getState()).toBe(TileState.Loading);
-      tile.clearCache();
-      expect(tile.getState()).toBe(TileState.Pending);
-    });
-
-    it('allows a fresh fetch after clearing a Ready tile', async () => {
-      const tile = new Tile('http://example.com/tile.nc');
-      await tile.fetch();
-      tile.clearCache();
-      await tile.fetch();
-      expect(tile.getState()).toBe(TileState.Ready);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-    });
+  it('clearCache() drops data and returns to Pending', () => {
+    const tile = new Tile();
+    tile.load(TILE);
+    tile.clearCache();
+    expect(tile.getData()).toBeNull();
+    expect(tile.byteSize()).toBe(0);
+    expect(tile.getState()).toBe(TileState.Pending);
   });
 });

@@ -53,3 +53,30 @@ jobs:
 
       - name: Run tests
         run: npx vitest run
+
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run render tests
+        run: npm run test:render
+
+      - name: Upload render diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-diagnostics
+          path: test/render/__output__/
