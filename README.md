@@ -51,24 +51,27 @@ npm install
 
 ### Running the Demo
 
-The demo requires two servers running simultaneously:
-
-**Terminal 1 - Data Server** (serves NetCDF tile data with CORS headers):
-
-```bash
-npm run serve-data
-# or directly: python cors_server.py
-```
-
-This starts a Python HTTP server on port 8000 that serves the example data files.
-
-**Terminal 2 - Dev Server** (Vite dev server with hot reload):
+The demo is a [Vue](https://vuejs.org/) application in `demo/`. Its data is
+not part of the repository; create it once with SurfaceTopography (v1.28.0
+or later):
 
 ```bash
+pip install SurfaceTopography
+npm run demo:data          # python demo/make_demo_data.py
 npm run dev
 ```
 
-This starts the Vite dev server on port 3000 and opens the demo in your browser.
+The demo surface is an egg box with roughness on top: the overview shows
+only the egg box, and the roughness appears when zooming in, because coarse
+levels hold block averages and the colour scale follows the values in view.
+`python demo/make_demo_data.py --help` lists the parameters of the surface;
+datasets written with another `--name` are added to the demo's menu. The
+data goes to `demo/data/`, which git ignores and the dev server serves at
+`/data/`. Any other pyramid can be shown with `?data=<root URL>`.
+
+`demo/src/components/HeightMapViewer.vue` shows how to embed the engine in
+a component: it creates a `ZoomEngine` on a canvas, adds the
+`DefaultController` and `CrossSections`, and reports values through events.
 
 ### Tests
 

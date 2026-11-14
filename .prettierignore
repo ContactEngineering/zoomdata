@@ -8,3 +8,4 @@ examples
 *.nc
 test/fixtures
 test/render/__output__
+demo/data

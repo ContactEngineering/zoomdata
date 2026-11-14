@@ -152,3 +152,6 @@ examples/**/dzdata_files/
 # Render test diagnostics
 test/render/__output__/
 .vitest-attachments/
+
+# Demo data, created by demo/make_demo_data.py
+demo/data/
