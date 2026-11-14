@@ -27,6 +27,11 @@ describe('PyramidGeometry', () => {
     expect(geometry.tileCount(5)).toEqual({ cols: 1, rows: 1 });
   });
 
+  it('has the finest single-tile level as base level', () => {
+    expect(geometry.baseLevel).toBe(5);
+    expect(new PyramidGeometry({ Width: 10, Height: 10 }, 32, 0).baseLevel).toBe(4);
+  });
+
   it('truncates the core of edge tiles', () => {
     expect(geometry.tileCore(8, 4, 3)).toEqual({ x0: 128, y0: 96, x1: 150, y1: 100 });
   });

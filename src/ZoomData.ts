@@ -45,6 +45,7 @@ export class ZoomData {
   private minValue: number | undefined;
   private maxValue: number | undefined;
   private readonly noDataColor: number | undefined;
+  private readonly cacheBytes: number | undefined;
   private readonly backgroundColor: number | undefined;
 
   // Crosshair state (image pixel coordinates, null = not placed)
@@ -87,6 +88,7 @@ export class ZoomData {
     this.minValue = options.minValue;
     this.maxValue = options.maxValue;
     this.noDataColor = options.noDataColor;
+    this.cacheBytes = options.cacheBytes;
     this.backgroundColor = options.backgroundColor;
   }
 
@@ -147,7 +149,7 @@ export class ZoomData {
     }
 
     // Create tiled image with WebGL renderer
-    this.tiledImage = new TiledImage(this.config, 100);
+    this.tiledImage = new TiledImage(this.config, this.cacheBytes);
     // The colour range defaults to the range of the data
     const { encoding, colorbarRange } = this.config.descriptor;
     this.minValue ??= colorbarRange?.Minimum ?? encoding.addOffset;

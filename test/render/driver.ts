@@ -26,6 +26,8 @@ export interface Driver {
   setColorRange(min: number, max: number): void;
   /** Value at an image position from the tiles in memory */
   sampleAt(x: number, y: number): Sample | null;
+  /** Tiles and bytes in the cache */
+  cacheStats(): { tileCount: number; textureCount: number; bytes: number };
   /** Number of tile fetches so far */
   tileFetches(): number;
   /** Lose the WebGL context and wait until it is restored */
@@ -41,7 +43,10 @@ interface ZoomDataInternals {
   xPos: number;
   yPos: number;
   render(): void;
-  tiledImage: { tileCache: { values(): IterableIterator<{ getState(): string }> } };
+  tiledImage: {
+    tileCache: { values(): IterableIterator<{ getState(): string }> };
+    getCacheStats(): { tileCount: number; textureCount: number; bytes: number };
+  };
 }
 
 const blocked: { pattern: RegExp; release: Promise<void> }[] = [];
@@ -75,6 +80,7 @@ export interface DriverOptions {
   height?: number;
   colorRange?: [number, number];
   source?: TileSource;
+  cacheBytes?: number;
 }
 
 export async function createDriver(ref: Reference, options: DriverOptions = {}): Promise<Driver> {
@@ -89,6 +95,7 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
     colorPalette: testPalette(),
     minValue: colorRange?.[0],
     maxValue: colorRange?.[1],
+    cacheBytes: options.cacheBytes,
     noDataColor: (NO_DATA[0] | (NO_DATA[1] << 8) | (NO_DATA[2] << 16) | (255 << 24)) >>> 0,
   });
   await viewer.start(canvas);
@@ -123,6 +130,7 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
       viewer.setColorRange(min, max);
     },
     sampleAt: (x, y) => viewer.sampleAt(x, y),
+    cacheStats: () => internals.tiledImage.getCacheStats(),
     tileFetches: () => tileFetches,
     async loseContext() {
       const gl = canvas.getContext('webgl2')!;

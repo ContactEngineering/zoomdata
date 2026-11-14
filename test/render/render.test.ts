@@ -149,6 +149,33 @@ describe('sampling', () => {
   });
 });
 
+describe('tile cache', () => {
+  test('stays within its byte budget while panning', async () => {
+    // A finest-level tile is 34 x 34 float32 values plus coordinates on the
+    // CPU and as much again on the GPU: about 9.8 kB. The budget holds a
+    // handful of them, fewer than the 20 tiles of the finest level.
+    const budget = 60_000;
+    const { ref, driver } = await setup('pattern-ov1', { cacheBytes: budget });
+    const deleted = vi.spyOn(WebGL2RenderingContext.prototype, 'deleteTexture');
+    try {
+      for (const [tx, ty] of [
+        [-20, -20],
+        [-300, -20],
+        [-500, -250],
+        [-20, -250],
+        [-20, -20],
+      ]) {
+        const view = { k: 4, tx: tx + 0.3, ty: ty + 0.6 };
+        await check(`cache ${tx} ${ty}`, ref, await driver.render(view), view);
+        expect(driver.cacheStats().bytes).toBeLessThanOrEqual(budget);
+      }
+      expect(deleted).toHaveBeenCalled();
+    } finally {
+      deleted.mockRestore();
+    }
+  });
+});
+
 describe('WebGL2 renderer', () => {
   it('is supported in the test browser', () => {
     expect(supportsWebGL2()).toBe(true);

@@ -83,6 +83,17 @@ export class Tile {
     return this.encoding.addOffset + this.encoding.scaleFactor * this.data[y * this.width + x];
   }
 
+  /**
+   * Bytes of tile data held in CPU memory
+   */
+  byteSize(): number {
+    return (
+      (this.data?.byteLength ?? 0) +
+      (this.xCoords?.byteLength ?? 0) +
+      (this.yCoords?.byteLength ?? 0)
+    );
+  }
+
   /** get the x coordinates and y coordinates in micrometers */
 
   getXCoords(): Float64Array | null {
@@ -151,6 +162,8 @@ export class Tile {
    */
   clearCache(): void {
     this.data = null;
+    this.xCoords = null;
+    this.yCoords = null;
     this.fetchPromise = null;
     this.state = TileState.Pending;
   }

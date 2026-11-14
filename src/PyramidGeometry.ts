@@ -54,6 +54,20 @@ export class PyramidGeometry {
     this.maxLevel = Math.ceil(Math.log2(Math.max(this.width, this.height)));
   }
 
+  /**
+   * Finest level that is a single tile. It and all coarser levels together
+   * are small and always give something to draw.
+   */
+  get baseLevel(): number {
+    let level = 0;
+    while (level < this.maxLevel) {
+      const { cols, rows } = this.tileCount(level + 1);
+      if (cols > 1 || rows > 1) break;
+      level++;
+    }
+    return level;
+  }
+
   /** Image pixels per pixel of the level */
   stride(level: number): number {
     return 2 ** (this.maxLevel - level);

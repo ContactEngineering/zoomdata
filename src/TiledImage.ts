@@ -29,12 +29,21 @@ export class TiledImage {
   /**
    * Create a new TiledImage
    * @param config - The zoom configuration
-   * @param maxCacheSize - Maximum number of tiles to cache (default: 100)
+   * @param cacheBytes - Memory budget for tiles, CPU and GPU (default: 256 MiB)
    */
-  constructor(config: ZoomConfiguration, maxCacheSize: number = 100) {
+  constructor(config: ZoomConfiguration, cacheBytes?: number) {
     this.config = config;
-    this.tileCache = new TileCache(maxCacheSize);
-    this.tileCache.onEvict = (key) => this.deleteTexture(key);
+    const baseLevel = config.geometry.baseLevel;
+    this.tileCache = new TileCache({
+      maxBytes: cacheBytes,
+      sizeOf: (key, tile) => tile.byteSize() + (this.textureCache.get(key)?.bytes ?? 0),
+      // Never evict the base level, so there is always something to draw
+      isPinned: (key) => Number(key.slice(0, key.indexOf('/'))) <= baseLevel,
+    });
+    this.tileCache.onEvict = (key, tile) => {
+      this.deleteTexture(key);
+      tile.clearCache();
+    };
   }
 
   /**
@@ -99,6 +108,7 @@ export class TiledImage {
     if (!data) return null;
     const texture = this.renderer.createTileTexture(data, tile.width, tile.height);
     this.textureCache.set(cacheKey, texture);
+    this.tileCache.updateSize(cacheKey);
     return texture;
   }
 
@@ -120,7 +130,10 @@ export class TiledImage {
     }
 
     if (tile.getState() === TileState.Pending) {
-      const done = () => this.onTilesLoaded?.();
+      const done = () => {
+        this.tileCache.updateSize(cacheKey);
+        this.onTilesLoaded?.();
+      };
       tile.fetch().then(done, done);
     }
 
@@ -264,10 +277,11 @@ export class TiledImage {
   /**
    * Get cache statistics
    */
-  getCacheStats(): { tileCount: number; textureCount: number } {
+  getCacheStats(): { tileCount: number; textureCount: number; bytes: number } {
     return {
       tileCount: this.tileCache.size,
       textureCount: this.textureCache.size,
+      bytes: this.tileCache.bytes,
     };
   }
 
