@@ -39,8 +39,8 @@ The viewer needs WebGL2; check with `supportsWebGL2()` to fall back.
 
 ### Prerequisites
 
-- Node.js 18+
-- Python 3 (for the data server)
+- Node.js 22.12 or later
+- Python 3 with SurfaceTopography (for the demo data)
 
 ### Setup
 

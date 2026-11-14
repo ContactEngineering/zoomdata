@@ -2,7 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": ".",
-    "types": ["@vitest/browser-playwright"]
+    "types": ["node", "@vitest/browser-playwright"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  "exclude": []
 }

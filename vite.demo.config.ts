@@ -9,7 +9,7 @@ import { join, normalize, resolve, sep } from 'path';
  * while the server runs shows up on reload.
  */
 function serveDemoData(): Plugin {
-  const root = resolve(__dirname, 'demo/data');
+  const root = resolve(import.meta.dirname, 'demo/data');
   const handler: Connect.NextHandleFunction = (req, res) => {
     const path = decodeURIComponent((req.url ?? '/').split('?')[0]);
     const file = join(root, normalize(path));
@@ -47,7 +47,7 @@ function serveDemoData(): Plugin {
  * Run with: npm run dev
  */
 export default defineConfig({
-  root: resolve(__dirname, 'demo'),
+  root: resolve(import.meta.dirname, 'demo'),
   plugins: [vue(), serveDemoData()],
   server: {
     port: 3000,
@@ -56,7 +56,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // The demo imports the library as applications do
-      zoomdata: resolve(__dirname, 'src/index.ts'),
+      zoomdata: resolve(import.meta.dirname, 'src/index.ts'),
     },
   },
 });
