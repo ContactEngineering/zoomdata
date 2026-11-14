@@ -30,8 +30,8 @@ function fakeEngine() {
       view = { rotation: 0, tilt: 0, ...v };
     }),
     fitView: () => ({ ...fit }),
-    orbitView: (rotation: number, tilt: number) => {
-      const c = orbit(camera(), rotation, tilt, 200, 150);
+    orbitView: (rotation: number, tilt: number, pivot = { x: 200, y: 150 }) => {
+      const c = orbit(camera(), rotation, tilt, pivot.x, pivot.y);
       return { k: c.k, x: c.tx, y: c.ty, rotation: c.rotation, tilt: c.tilt };
     },
     screenToImage,
@@ -191,6 +191,89 @@ describe('DefaultController', () => {
     expect([engine.view.rotation, engine.view.tilt, engine.view.k]).toEqual([30, 45, 0.8]);
     controller.fit();
     expect(engine.view).toEqual({ k: 0.4, x: 0, y: 50, rotation: 0, tilt: 0 });
+  });
+
+  describe('two fingers twisting', () => {
+    // Two fingers 100 px either side of (200, 150); the second turns about
+    // the first by `degrees`
+    const second = (degrees: number) => {
+      const a = (degrees * Math.PI) / 180;
+      return [100 + 200 * Math.cos(a), 150 + 200 * Math.sin(a)] as const;
+    };
+    const start = () => {
+      pointer('pointerdown', 1, 100, 150);
+      pointer('pointerdown', 2, ...second(0));
+    };
+
+    it('turn the map once they have twisted by 10 degrees, then follow', () => {
+      start();
+      pointer('pointermove', 2, ...second(6));
+      expect(engine.view.rotation).toBe(0);
+      // Past the threshold: the map turns by this move, clockwise like the fingers
+      pointer('pointermove', 2, ...second(14));
+      expect(engine.view.rotation).toBeCloseTo(8, 9);
+      pointer('pointermove', 2, ...second(44));
+      expect(engine.view.rotation).toBeCloseTo(38, 9);
+      // And back, also below the threshold now
+      pointer('pointermove', 2, ...second(40));
+      expect(engine.view.rotation).toBeCloseTo(34, 9);
+      expect(engine.view.tilt).toBe(0);
+    });
+
+    it('turn it about the point between them', () => {
+      start();
+      pointer('pointermove', 2, ...second(12));
+      // The fingers are at (100, 150) and second(12); the map point that
+      // was between them before the last move is between them still
+      const [x, y] = second(12);
+      const mid = { x: (100 + x) / 2, y: (150 + y) / 2 };
+      const under = imageAt(mid.x, mid.y);
+      pointer('pointermove', 2, ...second(40));
+      const [x2, y2] = second(40);
+      const after = imageAt((100 + x2) / 2, (150 + y2) / 2);
+      expect(after.x).toBeCloseTo(under.x, 6);
+      expect(after.y).toBeCloseTo(under.y, 6);
+      // The fingers stayed 200 px apart: no zoom
+      expect(engine.view.k).toBeCloseTo(0.4, 9);
+    });
+
+    it('turn it anticlockwise too, across the direction where angles wrap', () => {
+      pointer('pointerdown', 1, 300, 150);
+      // The second finger is to the left of the first: at 180 degrees
+      pointer('pointerdown', 2, 100, 150);
+      const at = (degrees: number) => {
+        const a = (degrees * Math.PI) / 180;
+        return [300 + 200 * Math.cos(a), 150 + 200 * Math.sin(a)] as const;
+      };
+      pointer('pointermove', 2, ...at(175));
+      pointer('pointermove', 2, ...at(165));
+      // Past the threshold on the second move: 10 degrees anticlockwise
+      expect(engine.view.rotation).toBeCloseTo(350, 9);
+      // From 165 through 180 to -170 degrees is 25 degrees clockwise
+      pointer('pointermove', 2, ...at(-170));
+      expect(engine.view.rotation).toBeCloseTo(15, 9);
+    });
+
+    it('do not turn it while pinching or dragging', () => {
+      start();
+      // Apart, together and sideways, with a twist of a few degrees
+      pointer('pointermove', 2, 380, 160);
+      pointer('pointermove', 1, 60, 145);
+      pointer('pointermove', 2, 330, 150);
+      pointer('pointermove', 1, 90, 170);
+      expect(engine.view.rotation).toBe(0);
+      expect(engine.view.k).not.toBeCloseTo(0.4, 3);
+    });
+
+    it('start afresh with every gesture', () => {
+      start();
+      pointer('pointermove', 2, ...second(8));
+      pointer('pointerup', 2, ...second(8));
+      // The 8 degrees of the last gesture do not count towards this one
+      pointer('pointerdown', 3, ...second(8));
+      pointer('pointermove', 3, ...second(14));
+      expect(engine.view.rotation).toBe(0);
+    });
   });
 
   it('does not open the context menu', () => {

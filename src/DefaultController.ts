@@ -15,6 +15,11 @@ export interface DefaultControllerOptions {
   maxScale?: number;
   /** Degrees the map turns or tips per CSS pixel of an orbit drag (default: 0.4) */
   orbitSpeed?: number;
+  /**
+   * Degrees two fingers must twist before the map starts to turn with
+   * them, so that a pinch or a two-finger drag does not turn it (default: 10)
+   */
+  twistThreshold?: number;
   /** Enable keyboard input; makes the element focusable (default: true) */
   keyboard?: boolean;
   /** Called on double click / double tap with the image position */
@@ -23,8 +28,9 @@ export interface DefaultControllerOptions {
 
 /**
  * Default input handling for a ZoomEngine: drag to pan with mouse, pen or
- * one finger; pinch with two fingers; wheel to zoom about the cursor;
- * drag with the right button, or with Shift, to turn and tilt the map;
+ * one finger; pinch with two fingers, and twist them to turn the map;
+ * wheel to zoom about the cursor; drag with the right button, or with
+ * Shift, to turn and tilt the map;
  * +/-, arrow keys and 0 (fit, looking straight down) on the keyboard.
  *
  * It only calls engine.setView(); hosts with their own gesture handling do
@@ -40,6 +46,10 @@ export class DefaultController {
   private pointers = new Map<number, { x: number; y: number }>();
   private lastTap: { time: number; x: number; y: number } | null = null;
   private orbiting = false;
+  // Angle the two pointers have twisted by in this gesture, in degrees, and
+  // whether that has started to turn the map
+  private twist = 0;
+  private turning = false;
 
   private readonly listeners: [string, EventListener, AddEventListenerOptions?][];
 
@@ -54,6 +64,7 @@ export class DefaultController {
       minFitFraction: options.minFitFraction ?? 0.25,
       maxScale: options.maxScale ?? 64,
       orbitSpeed: options.orbitSpeed ?? 0.4,
+      twistThreshold: options.twistThreshold ?? 10,
       keyboard: options.keyboard ?? true,
     };
 
@@ -130,6 +141,9 @@ export class DefaultController {
     this.pointers.set(event.pointerId, this.position(event));
     // The right button, or Shift with the left, turns and tilts the map
     this.orbiting = event.pointerType === 'mouse' && (event.button === 2 || event.shiftKey);
+    // A new pointer starts a new two-finger gesture
+    this.twist = 0;
+    this.turning = false;
     this.element.style.cursor = 'grabbing';
 
     // Double tap on touch screens (dblclick covers mouse)
@@ -164,8 +178,9 @@ export class DefaultController {
       return;
     }
 
-    // Pinch: keep the image point under the pointers' midpoint under it,
-    // and scale with their distance
+    // Two pointers: keep the image point under their midpoint under it,
+    // scale with their distance, and turn the map with the line between
+    // them
     const [a, b] = [...this.pointers.entries()];
     const other = a[0] === event.pointerId ? b[1] : a[1];
     const midBefore = { x: (previous.x + other.x) / 2, y: (previous.y + other.y) / 2 };
@@ -175,10 +190,27 @@ export class DefaultController {
     this.pointers.set(event.pointerId, current);
     if (distBefore > 0) this.zoomAbout(distAfter / distBefore, midBefore.x, midBefore.y);
     this.panBy(midAfter.x - midBefore.x, midAfter.y - midBefore.y);
+
+    if (distBefore > 0 && distAfter > 0) {
+      // Angles grow clockwise on screen, like the rotation of the map
+      const direction = (p: { x: number; y: number }) =>
+        (Math.atan2(p.y - other.y, p.x - other.x) * 180) / Math.PI;
+      const turn = ((direction(current) - direction(previous) + 540) % 360) - 180;
+      // Fingers never move exactly in parallel: the map only starts to turn
+      // once they have twisted by a clear angle, and then follows them
+      this.twist += turn;
+      if (Math.abs(this.twist) >= this.options.twistThreshold) this.turning = true;
+      if (this.turning) {
+        const view = this.engine.view;
+        this.engine.setView(this.engine.orbitView(view.rotation + turn, view.tilt, midAfter));
+      }
+    }
   };
 
   private readonly handlePointerUp = (event: PointerEvent) => {
     this.pointers.delete(event.pointerId);
+    this.twist = 0;
+    this.turning = false;
     if (this.pointers.size === 0) this.element.style.cursor = 'grab';
   };
 

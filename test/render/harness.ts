@@ -23,6 +23,8 @@
  * - With a rotation or a tilt, the map shows as a surface in an orthographic
  *   view (see `locate` and `surfaceHeight`); each point of the surface has
  *   the colour of the level pixel it lies in.
+ * - That view is anti-aliased unless switched off: a pixel shows the mean
+ *   colour of four samples (see `antialiasedImage`).
  *
  * Pixel centres within `edgeTolerance` (in screen pixels) of a texel border
  * or the image border are not checked, since either side is correct there.
@@ -127,7 +129,10 @@ export type Expected =
   | { kind: 'skip' }
   | { kind: 'background' }
   | { kind: 'nodata' }
-  | { kind: 'value'; t: number; value: number; shade?: number };
+  | { kind: 'value'; t: number; value: number; shade?: number }
+  // Anti-aliased: the mean colour of the samples of the pixel. `map` tells
+  // whether any of them shows the map, `mixed` whether they differ in kind.
+  | { kind: 'mean'; rgb: RGB; map: boolean; mixed: boolean };
 
 export interface ExpectOptions {
   /** Colour range in physical units (default: the descriptor's ColorbarRange) */
@@ -142,6 +147,72 @@ export interface ExpectOptions {
   pixelsPerUnit?: { x: number; y: number };
   /** Vertical exaggeration of the surface in the tilted view (default 1) */
   verticalExaggeration?: number;
+  /**
+   * The turned or tilted view is anti-aliased: give the colours of the
+   * background and of undefined points, which the mean colours need
+   */
+  antialias?: { background: RGB; noData: RGB };
+}
+
+/** Samples along each side of a pixel of the anti-aliased view */
+const SUPERSAMPLING = 2;
+
+/** Colour a sample shows, as the renderer computes it */
+function sampleColor(e: Expected, colors: { background: RGB; noData: RGB }): RGB {
+  if (e.kind === 'background') return colors.background;
+  if (e.kind === 'nodata') return colors.noData;
+  if (e.kind !== 'value') throw new Error(`No colour for ${e.kind}`);
+  // Entry floor(t n) of the n = 256 colours (i, 255 - i, 128)
+  const i = Math.min(255, Math.floor(e.t * 256));
+  const f = e.shade ?? 1;
+  return [Math.min(255, i * f), Math.min(255, (255 - i) * f), Math.min(255, 128 * f)];
+}
+
+/**
+ * The anti-aliased view takes SUPERSAMPLING x SUPERSAMPLING samples per
+ * pixel, at regular positions, and shows their mean colour. Each sample
+ * follows the rules of the image without anti-aliasing; a pixel is not
+ * checked if one of its samples is not.
+ */
+function antialiasedImage(
+  ref: Reference,
+  view: View,
+  width: number,
+  height: number,
+  options: ExpectOptions & { antialias: { background: RGB; noData: RGB } },
+): Expected[] {
+  const n = SUPERSAMPLING;
+  const samples = expectedImage(
+    ref,
+    { ...view, k: n * view.k, tx: n * view.tx, ty: n * view.ty },
+    n * width,
+    n * height,
+    // The level is that of the view, not of the samples
+    { ...options, antialias: undefined, level: options.level ?? levelForView(ref, view) },
+  );
+  const out: Expected[] = new Array(width * height);
+  for (let py = 0; py < height; py++) {
+    for (let px = 0; px < width; px++) {
+      const pixel: Expected[] = [];
+      for (let j = 0; j < n; j++) {
+        for (let i = 0; i < n; i++) pixel.push(samples[(n * py + j) * n * width + n * px + i]);
+      }
+      if (pixel.some((e) => e.kind === 'skip')) {
+        out[py * width + px] = { kind: 'skip' };
+        continue;
+      }
+      const colors = pixel.map((e) => sampleColor(e, options.antialias));
+      out[py * width + px] = {
+        kind: 'mean',
+        rgb: [0, 1, 2].map(
+          (c) => colors.reduce((sum, rgb) => sum + rgb[c], 0) / colors.length,
+        ) as RGB,
+        map: pixel.some((e) => e.kind !== 'background'),
+        mixed: pixel.some((e) => e.kind !== pixel[0].kind),
+      };
+    }
+  }
+  return out;
 }
 
 /**
@@ -340,9 +411,13 @@ export function expectedImage(
   height: number,
   options: ExpectOptions = {},
 ): Expected[] {
+  const turned = Boolean(view.rotation) || Boolean(view.tilt);
+  // Only the turned or tilted view is anti-aliased
+  if (options.antialias && turned) {
+    return antialiasedImage(ref, view, width, height, { ...options, antialias: options.antialias });
+  }
   const level = options.level ?? levelForView(ref, view);
   const [cmin, cmax] = options.colorRange ?? [ref.colorbarRange.Minimum, ref.colorbarRange.Maximum];
-  const turned = Boolean(view.rotation) || Boolean(view.tilt);
   // Distances along the view direction are foreshortened in the tilted view
   const tol = (options.edgeTolerance ?? 0.05) / Math.cos(((view.tilt ?? 0) * Math.PI) / 180);
   const s = 2 ** (ref.maxLevel - level);
@@ -454,6 +529,8 @@ function describe(e: Expected): string {
         `value ${e.value.toPrecision(6)} (R=${(255 * e.t).toFixed(1)})` +
         (e.shade === undefined ? '' : ` × ${e.shade.toFixed(3)}`)
       );
+    case 'mean':
+      return `mean colour RGB(${e.rgb.map((c) => c.toFixed(1)).join(', ')})`;
     default:
       return e.kind;
   }
@@ -485,6 +562,9 @@ export function compare(
       ok = close(actual, options.background, colorTol);
     } else if (e.kind === 'nodata') {
       ok = close(actual, options.noData, colorTol);
+    } else if (e.kind === 'mean') {
+      // Each sample may be off by a palette entry, and the mean is rounded
+      ok = close(actual, e.rgb, valueTol + 1);
     } else if (e.shade === undefined) {
       const r = 255 * e.t;
       ok =
@@ -530,6 +610,8 @@ function expectedPixels(
       c = options.background;
     } else if (e.kind === 'nodata') {
       c = options.noData;
+    } else if (e.kind === 'mean') {
+      c = e.rgb;
     } else {
       c = [0, 255, 255];
     }

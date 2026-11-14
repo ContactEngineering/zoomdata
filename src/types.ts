@@ -66,6 +66,8 @@ export interface ZoomDataOptions {
   relief?: ReliefOptions | boolean;
   /** Vertical exaggeration of the surface in the tilted view (default: 1) */
   verticalExaggeration?: number;
+  /** Smooth the tilted or rotated view (default: true) */
+  antialias?: boolean;
   /** Color palette to use (array of 32-bit RGBA integers) */
   colorPalette?: number[];
   /** Value mapped to the first palette entry, in physical units (default: data minimum) */

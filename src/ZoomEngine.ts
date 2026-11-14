@@ -70,6 +70,12 @@ export interface ZoomEngineOptions {
   /** Vertical exaggeration of the surface in the tilted view (default: 1) */
   verticalExaggeration?: number;
   /**
+   * Smooth the tilted or rotated view: edges of the surface, and borders
+   * between values smaller than a pixel. The plain view is never smoothed.
+   * (default: true)
+   */
+  antialias?: boolean;
+  /**
    * Size the canvas' drawing buffer to its CSS size times the device pixel
    * ratio, and follow changes of either (default: true)
    */
@@ -143,7 +149,11 @@ export class ZoomEngine {
       canvas,
       options.colorPalette ?? Palettes.inferno(256),
       ...this._colorRange,
-      { noData: options.noDataColor, background: options.backgroundColor },
+      {
+        noData: options.noDataColor,
+        background: options.backgroundColor,
+        antialias: options.antialias,
+      },
     );
     this.setRelief(options.relief ?? false);
     this.tiledImage.onTilesLoaded = () => {
@@ -472,6 +482,16 @@ export class ZoomEngine {
   setRelief(relief: ReliefOptions | boolean): void {
     this._relief = resolveRelief(relief);
     this.tiledImage.setRelief(this._relief);
+    this.scheduleRender();
+  }
+
+  /**
+   * Switch the smoothing of the tilted or rotated view. It takes four
+   * samples per pixel, so it costs four times the fill work and memory of
+   * that view; canvases beyond about 10 megapixels are drawn without.
+   */
+  setAntialias(antialias: boolean): void {
+    this.tiledImage.setAntialias(antialias);
     this.scheduleRender();
   }
 

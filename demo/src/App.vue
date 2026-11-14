@@ -142,8 +142,8 @@ const probeText = computed(() => {
           @crosshair="crosshair = $event"
         />
         <p class="hint">
-          Scroll or pinch to zoom · drag to pan · right-drag or Shift-drag to turn and tilt ·
-          double-click for cross-sections · keys + − ← ↑ → ↓ 0
+          Scroll or pinch to zoom · drag to pan · right-drag or Shift-drag to turn and tilt · twist
+          two fingers to turn · double-click for cross-sections · keys + − ← ↑ → ↓ 0
         </p>
       </section>
 
