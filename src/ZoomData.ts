@@ -676,14 +676,12 @@ export class ZoomData {
     const visImgY0 = -this.yPos * scale;
     const visImgY1 = (this.canvas!.height - this.yPos) * scale;
 
-    // Helper: convert normalised [0,1] data to physical height values using colorbar range.
-    // If the colorbar range is absent, pass the raw value through.
+    // Helper: convert stored tile values to physical height values
     const colorbarMin = this.config.colorbarRange?.Minimum;
     const colorbarMax = this.config.colorbarRange?.Maximum;
     const hasColorbarRange = colorbarMin !== undefined && colorbarMax !== undefined;
-    const toPhys = hasColorbarRange
-      ? (norm: number) => norm * (colorbarMax! - colorbarMin!) + colorbarMin!
-      : (norm: number) => norm;
+    const { scaleFactor, addOffset } = this.config.descriptor.encoding;
+    const toPhys = (v: number) => addOffset + scaleFactor * v;
 
     const valueAxisLabel = `${this.config.colorbarTitle ?? 'Height'}`;
 

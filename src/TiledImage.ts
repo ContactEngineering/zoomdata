@@ -115,7 +115,11 @@ export class TiledImage {
 
     if (!tile) {
       const source = this.config.source;
-      tile = new Tile(() => source.tileUrl(level, col, row));
+      const extent = this.config.geometry.tileExtent(level, col, row);
+      tile = new Tile(() => source.tileUrl(level, col, row), {
+        expectedShape: { width: extent.x1 - extent.x0, height: extent.y1 - extent.y0 },
+        encoding: this.config.descriptor.encoding,
+      });
       this.tileCache.set(cacheKey, tile);
     }
 

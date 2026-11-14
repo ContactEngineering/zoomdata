@@ -120,27 +120,9 @@ data/
     ...
 ```
 
-### dzdata.json Format
-
-```json
-{
-  "Image": {
-    "Size": {
-      "Width": 1024,
-      "Height": 1024
-    },
-    "TileSize": 256,
-    "Overlap": 0
-  }
-}
-```
-
-### NetCDF Tile Format
-
-Each `.nc` file must contain:
-
-- A `heights` variable with the data values
-- `x` and `y` dimensions
+The descriptor fields, the level and tile geometry and the NetCDF tile
+layout (format versions 1 and 2) are specified in
+[docs/pyramid-format.md](docs/pyramid-format.md).
 
 ## Generating Example Data
 
@@ -153,7 +135,7 @@ from SurfaceTopography.Generation import fourier_synthesis
 t = fourier_synthesis((1024, 1024), (1.0, 1.0), 0.8, rms_slope=0.1, unit='mm')
 
 # Export as DZI with NetCDF tiles
-t.to_dzi('dzdata', 'output_dir', format='nc', meta_format='json')
+t.to_dzi('dzdata', 'output_dir', format='nc', meta_format='json', nc_version=2)
 ```
 
 ## API Reference

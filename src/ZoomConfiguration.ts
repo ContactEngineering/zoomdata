@@ -1,3 +1,4 @@
+import { parseDescriptor, type PyramidDescriptor } from './PyramidDescriptor';
 import { PyramidGeometry } from './PyramidGeometry';
 import { toTileSource, type TileSource } from './TileSource';
 import type { ColorbarRange, ImageSize } from './types';
@@ -10,6 +11,7 @@ import type { ColorbarRange, ImageSize } from './types';
 export class ZoomConfiguration {
   readonly source: TileSource;
 
+  private _descriptor: PyramidDescriptor | null = null;
   private _geometry: PyramidGeometry | null = null;
   private _imageSize: ImageSize | null = null;
   private _tileSize: number | null = null;
@@ -33,6 +35,14 @@ export class ZoomConfiguration {
    */
   get isLoaded(): boolean {
     return this._loaded;
+  }
+
+  /**
+   * Get the validated descriptor (throws if not loaded)
+   */
+  get descriptor(): PyramidDescriptor {
+    this.assertLoaded();
+    return this._descriptor!;
   }
 
   /**
@@ -111,27 +121,14 @@ export class ZoomConfiguration {
     try {
       const data = await this.source.descriptor();
 
-      // Validate required fields
-      if (!data.Image) {
-        throw new Error('Invalid dzdata.json: missing "Image" field');
-      }
-      if (
-        !data.Image.Size ||
-        typeof data.Image.Size.Width !== 'number' ||
-        typeof data.Image.Size.Height !== 'number'
-      ) {
-        throw new Error('Invalid dzdata.json: missing or invalid "Image.Size"');
-      }
-      if (typeof data.Image.TileSize !== 'number') {
-        throw new Error('Invalid dzdata.json: missing or invalid "Image.TileSize"');
-      }
-
-      this._imageSize = data.Image.Size;
-      this._tileSize = data.Image.TileSize;
-      this._overlap = data.Image.Overlap ?? 0;
-      this._colorbarRange = data.Image.ColorbarRange ?? null;
-      this._colorbarTitle = data.Image.ColorbarTitle ?? null;
-      this._pixelsPerMeter = data.Image.PixelsPerMeter ?? null;
+      const descriptor = parseDescriptor(data);
+      this._descriptor = descriptor;
+      this._imageSize = descriptor.size;
+      this._tileSize = descriptor.tileSize;
+      this._overlap = descriptor.overlap;
+      this._colorbarRange = descriptor.colorbarRange;
+      this._colorbarTitle = descriptor.colorbarTitle;
+      this._pixelsPerMeter = descriptor.pixelsPerMeter;
 
       this._geometry = new PyramidGeometry(this._imageSize, this._tileSize, this._overlap);
       this._maxZoomLevel = this._geometry.maxLevel;

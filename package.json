@@ -37,9 +37,6 @@
   ],
   "author": "",
   "license": "MIT",
-  "dependencies": {
-    "netcdfjs": "^3.0.0"
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@vitest/browser-playwright": "^4.1.5",

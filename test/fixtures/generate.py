@@ -166,10 +166,48 @@ def generate(name, shape, tile_size, overlap, nc_version, offset=0.0, mask=None,
         json.dump(index, f, indent=1)
 
 
+def generate_decoder_fixtures():
+    """Small NetCDF files for the decoder's special and error cases"""
+    root = os.path.join(HERE, "decoder")
+    shutil.rmtree(root, ignore_errors=True)
+    os.makedirs(root)
+    # 3 x 2 tile with h[x, y] = 10 * x + y
+    h = 10.0 * np.arange(3)[:, None] + np.arange(2)[None, :]
+
+    def write(name, dims=("x", "y"), data=h, dtype="f4", version=1, attrs=None, record=False):
+        with netcdf_file(os.path.join(root, name), "w", version=version) as nc:
+            for d, n in zip(dims, data.shape):
+                nc.createDimension(d, None if record and d == dims[0] else n)
+            var = nc.createVariable("heights", dtype, dims)
+            if record:
+                var[: data.shape[0]] = data
+            else:
+                var[...] = data
+            for k, v in (attrs or {}).items():
+                setattr(var, k, v)
+
+    # 64-bit offset variant with CF attributes
+    write(
+        "offset64.nc",
+        version=2,
+        attrs={"scale_factor": np.float64(2.0), "add_offset": np.float64(-1.0)},
+    )
+    # Stored as (y, x)
+    write("yx.nc", dims=("y", "x"), data=h.T.copy(), dtype="f8")
+    write("int.nc", dtype="i4", data=h.astype(np.int32))
+    write("dims.nc", dims=("a", "b"))
+    write("record.nc", record=True)
+    with netcdf_file(os.path.join(root, "no-heights.nc"), "w") as nc:
+        nc.createDimension("x", 3)
+        v = nc.createVariable("z", "f4", ("x",))
+        v[...] = 0
+
+
 if __name__ == "__main__":
     names = sys.argv[1:] or FIXTURES
     for name in names:
         generate(name, **FIXTURES[name])
         print(f"{name}: ok")
+    generate_decoder_fixtures()
     with open(os.path.join(HERE, "GENERATOR"), "w") as f:
         f.write(f"SurfaceTopography {st_version}\n")
