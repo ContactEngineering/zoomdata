@@ -2,6 +2,7 @@
  * Shared type definitions for the zoomdata library
  */
 import type { TileLoaderOptions } from './TileLoader.js';
+import type { ReliefOptions } from './relief.js';
 import type { TileSource } from './TileSource.js';
 
 /** Size dimensions for images */
@@ -61,6 +62,8 @@ export interface ZoomDataOptions {
   controller?: boolean;
   /** Follow the canvas' CSS size and the device pixel ratio (default: true) */
   autoResize?: boolean;
+  /** Relief shading; `true` uses the defaults (default: off) */
+  relief?: ReliefOptions | boolean;
   /** Color palette to use (array of 32-bit RGBA integers) */
   colorPalette?: number[];
   /** Value mapped to the first palette entry, in physical units (default: data minimum) */

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_RELIEF } from '../../src/relief';
 import { supportsWebGL2 } from '../../src/WebGLRenderer';
 import { ZoomEngine } from '../../src/ZoomEngine';
 import { StaticTileSource, type TileSource } from '../../src/TileSource';
@@ -150,6 +151,100 @@ describe('tile loader', () => {
     } finally {
       release();
     }
+  });
+});
+
+describe('relief shading', () => {
+  const RELIEF = DEFAULT_RELIEF;
+  const RELIEF_VIEWS: Record<string, View> = {
+    'finest level, 1:1': { k: 1, tx: 5.3, ty: 2.7 },
+    'magnified 4x across tile borders': { k: 4, tx: -100.2, ty: -90.6 },
+    'level max-2, 1:4': { k: 0.25, tx: 10.4, ty: 6.2 },
+    'between levels (k=0.7)': { k: 0.7, tx: 4.1, ty: 3.3 },
+  };
+
+  // With overlap 1 and 2, slopes at tile borders use the neighbouring tile's
+  // values; without overlap they are one-sided there and not checked
+  for (const fixture of ['pattern-ov1', 'pattern-ov2', 'pattern-ov0']) {
+    for (const [name, view] of Object.entries(RELIEF_VIEWS)) {
+      it(`${fixture}: ${name}`, async () => {
+        const { ref, driver } = await setup(fixture, { relief: true });
+        await check(`relief ${fixture} ${name}`, ref, await driver.render(view), view, {
+          relief: RELIEF,
+        });
+      });
+    }
+  }
+
+  it('shades the map next to undefined points and the edge of the map', async () => {
+    // Format version 2 with a hole; the view shows the hole and three edges
+    const { ref, driver } = await setup('nan-v2', { relief: true });
+    const view = { k: 2, tx: 30.3, ty: -40.6 };
+    await check('relief nan-v2', ref, await driver.render(view), view, { relief: RELIEF });
+  });
+
+  it('follows the direction of the light, the exaggeration and the ambient light', async () => {
+    const options = { azimuth: 100, altitude: 30, exaggeration: 0.4, ambient: 0.1 };
+    const { ref, driver } = await setup('pattern-ov1', { relief: options });
+    const view = { k: 1, tx: 5.3, ty: 2.7 };
+    await check('relief options', ref, await driver.render(view), view, { relief: options });
+  });
+
+  it('shades a coarser level shown while finer tiles load', async () => {
+    const { ref, driver } = await setup('pattern-ov2', { relief: true });
+    const coarse = ref.maxLevel - 2;
+    await driver.render({ k: 0.25, tx: 0, ty: 0 });
+    const release = driver.blockTiles(new RegExp(`/dzdata_files/${ref.maxLevel}/`));
+    try {
+      const view = { k: 1, tx: 5, ty: 3 };
+      await check('relief fallback', ref, driver.renderNow(view), view, {
+        level: coarse,
+        relief: RELIEF,
+      });
+    } finally {
+      release();
+    }
+  });
+
+  it('switches on and off without re-uploading textures', async () => {
+    const { ref, driver } = await setup('pattern-ov1');
+    const view = { k: 1, tx: 5, ty: 3 };
+    await check('relief off', ref, await driver.render(view), view);
+    const upload = vi.spyOn(WebGL2RenderingContext.prototype, 'texImage2D');
+    try {
+      driver.engine.setRelief(true);
+      expect(driver.engine.relief).toEqual(RELIEF);
+      await check('relief on', ref, driver.renderNow(view), view, { relief: RELIEF });
+      driver.engine.setRelief(false);
+      expect(driver.engine.relief).toBeNull();
+      await check('relief off again', ref, driver.renderNow(view), view);
+      expect(upload).not.toHaveBeenCalled();
+    } finally {
+      upload.mockRestore();
+    }
+  });
+
+  it('assumes a height scale where the pixel size is unknown', async () => {
+    // Without the pixel size, the range of the values is taken to be a
+    // tenth of the smaller side of the map (100 pixels)
+    const ref = await loadReference('pattern-ov1');
+    const inner = new StaticTileSource(fixtureUrl('pattern-ov1'));
+    const source: TileSource = {
+      async descriptor() {
+        const d = await inner.descriptor();
+        delete d.Image.PixelsPerMeter;
+        return d;
+      },
+      tileUrl: (level, col, row) => inner.tileUrl(level, col, row),
+    };
+    const { driver } = await setup('pattern-ov1', { source, relief: true });
+    const view = { k: 1, tx: 5.3, ty: 2.7 };
+    const span = ref.colorbarRange.Maximum - ref.colorbarRange.Minimum;
+    const assumed = (0.1 * 100) / span;
+    await check('relief assumed scale', ref, await driver.render(view), view, {
+      relief: RELIEF,
+      pixelsPerUnit: { x: assumed, y: assumed },
+    });
   });
 });
 

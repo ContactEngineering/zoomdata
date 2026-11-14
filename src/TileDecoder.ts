@@ -26,6 +26,8 @@ export interface DecodedTile {
   values: Float32Array;
   /** CF attributes of `heights`, if present */
   encoding: ValueEncoding | null;
+  /** Unit of the heights (attribute `unit`), if present */
+  unit: string | null;
   /** Coordinates of the tile's pixels, if present */
   x: Float64Array | null;
   y: Float64Array | null;
@@ -283,6 +285,8 @@ export function decodeTile(
       ? null
       : { scaleFactor: scaleFactor ?? 1, addOffset: addOffset ?? 0 };
 
+  const unit = heights.attributes.get('unit');
+
   const xVar = vars.get('x');
   const yVar = vars.get('y');
   return {
@@ -290,6 +294,7 @@ export function decodeTile(
     height,
     values,
     encoding,
+    unit: typeof unit === 'string' && unit !== '' ? unit : null,
     x: xVar ? readCoordinates(view, xVar, dims, width) : null,
     y: yVar ? readCoordinates(view, yVar, dims, height) : null,
   };

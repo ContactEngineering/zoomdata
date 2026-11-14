@@ -1,5 +1,6 @@
 import type { ZoomConfiguration } from './ZoomConfiguration.js';
 import type { PixelRect, TileAddress } from './PyramidGeometry.js';
+import { lengthInMeters, type ReliefOptions } from './relief.js';
 import { sampleAt, type Sample } from './sampling.js';
 import { Tile } from './Tile.js';
 import { TileCache } from './TileCache.js';
@@ -96,6 +97,37 @@ export class TiledImage {
   }
 
   /**
+   * Light the map from one direction (null: off)
+   */
+  setRelief(relief: Required<ReliefOptions> | null): void {
+    this.renderer?.setRelief(relief);
+  }
+
+  /**
+   * Height of one unit of the values, as a number of image pixels along x
+   * and y: the factor that turns a difference of values between
+   * neighbouring image pixels into a slope.
+   *
+   * It follows from the unit of the values and the pixel size. Where either
+   * is unknown, the range of the values is taken to be a tenth of the
+   * smaller side of the map, which gives a readable relief but no true
+   * slopes.
+   */
+  private pixelsPerUnit(tile: Tile): { x: number; y: number } {
+    const { descriptor, geometry } = this.config;
+    const ppm = descriptor.pixelsPerMeter;
+    const meters = lengthInMeters(descriptor.unit ?? tile.unit);
+    if (ppm && meters !== null) {
+      return { x: meters * ppm.Width, y: meters * ppm.Height };
+    }
+    const range = descriptor.colorbarRange;
+    const span = range ? range.Maximum - range.Minimum : descriptor.encoding.scaleFactor;
+    const assumed = span > 0 ? (0.1 * Math.min(geometry.width, geometry.height)) / span : 0;
+    // Keep the aspect ratio of the pixels if it is known
+    return { x: assumed, y: ppm ? (assumed * ppm.Height) / ppm.Width : assumed };
+  }
+
+  /**
    * Level whose resolution best matches the view scale k (screen pixels per
    * image pixel)
    */
@@ -167,13 +199,18 @@ export class TiledImage {
     // t = (h - min) / (max - min) with h = addOffset + scaleFactor * v
     const [min, max] = this.colorRange;
     const width = max - min;
+    const stride = geometry.stride(level);
+    const perUnit = this.pixelsPerUnit(tile);
     this.renderer.drawTile(texture, {
-      stride: geometry.stride(level),
+      stride,
       originX: extent.x0,
       originY: extent.y0,
       clip,
       scale: width > 0 ? scaleFactor / width : 0,
       offset: width > 0 ? (addOffset - min) / width : 0,
+      // Neighbouring texels are `stride` image pixels apart
+      slopeX: (scaleFactor * perUnit.x) / stride,
+      slopeY: (scaleFactor * perUnit.y) / stride,
     });
     return true;
   }

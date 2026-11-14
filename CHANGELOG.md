@@ -38,6 +38,8 @@ v0.1.0 (not yet released)
   view with their own gestures instead
 - ENH: Sharp on high-resolution screens and follows changes of the canvas size
 - ENH: Several viewers can share a page, and viewers fit into Vue, React or plain pages
+- ENH: Relief shading lights the map from a chosen direction, with true slopes and optional vertical
+  exaggeration, so that fine structure shows; it switches instantly
 - ENH: Scale bar, colour bar, and a demo application with a generator for its data
 - API: Colour ranges are given in the physical units of the data, and default to its full range
 - API: Overlay and cross-section canvases are passed to the viewer instead of being found by id

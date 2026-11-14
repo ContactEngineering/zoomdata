@@ -2,6 +2,7 @@
  * ZoomData, the ready-made viewer, with several instances on one page.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_RELIEF, type ReliefOptions } from '../../src/relief';
 import { ZoomData } from '../../src/ZoomData';
 import { BACKGROUND, NO_DATA, readPixels } from './driver';
 import {
@@ -258,6 +259,31 @@ describe('ZoomData', () => {
     expect(at(150, 100)).toEqual([0x99, 0x66, 0x33]);
     // Outside the map
     expect(at(190, 150)).toEqual(BACKGROUND);
+  });
+
+  it('draws with relief shading, set as an option or later', async () => {
+    const ref = await loadReference('pattern-ov1');
+    const c = canvas(200, 160);
+    const zoomData = new ZoomData({
+      rootUrl: fixtureUrl('pattern-ov1'),
+      colorPalette: testPalette(),
+      relief: { azimuth: 45 },
+    });
+    await zoomData.start(c);
+    cleanup.push(() => zoomData.stop());
+    zoomData.setView({ k: 1, x: 5, y: 3 });
+    await settle(zoomData);
+    const shadedImage = (relief?: Required<ReliefOptions>) => {
+      zoomData.getEngine()!.render();
+      const expected = expectedImage(ref, { k: 1, tx: 5, ty: 3 }, 200, 160, { relief });
+      const result = compare(readPixels(c), expected, 200, OPTIONS);
+      expect(result.mismatches, formatComparison(result)).toBe(0);
+    };
+    shadedImage({ ...DEFAULT_RELIEF, azimuth: 45 });
+    zoomData.setRelief({ exaggeration: 3 });
+    shadedImage({ ...DEFAULT_RELIEF, exaggeration: 3 });
+    zoomData.setRelief(false);
+    shadedImage();
   });
 
   it('reports a pyramid that cannot be loaded', async () => {

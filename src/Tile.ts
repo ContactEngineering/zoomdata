@@ -17,6 +17,8 @@ export class Tile {
   private readonly options: TileOptions;
   private data: Float32Array | null = null;
   private encoding: ValueEncoding = { scaleFactor: 1, addOffset: 0 };
+  /** Unit of the values as the tile states it, if it does (set after load) */
+  unit: string | null = null;
   private state: TileState = TileState.Pending;
   private error: Error | null = null;
 
@@ -73,6 +75,7 @@ export class Tile {
       this.height = decoded.height;
       this.data = decoded.values;
       this.encoding = decoded.encoding ?? this.options.encoding ?? { scaleFactor: 1, addOffset: 0 };
+      this.unit = decoded.unit;
       this.state = TileState.Ready;
       this.error = null;
     } catch (err) {

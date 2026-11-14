@@ -1,5 +1,6 @@
 import { Palettes } from './palettes.js';
 import type { TileAddress } from './PyramidGeometry.js';
+import { resolveRelief, type ReliefOptions } from './relief.js';
 import type { Sample } from './sampling.js';
 import { TiledImage } from './TiledImage.js';
 import type { TileLoaderOptions } from './TileLoader.js';
@@ -44,6 +45,11 @@ export interface ZoomEngineOptions {
   /** Concurrency and retries of tile requests */
   loader?: TileLoaderOptions;
   /**
+   * Relief shading: light the map from one direction so that slopes show.
+   * `true` uses the defaults (default: off)
+   */
+  relief?: ReliefOptions | boolean;
+  /**
    * Size the canvas' drawing buffer to its CSS size times the device pixel
    * ratio, and follow changes of either (default: true)
    */
@@ -70,6 +76,7 @@ export class ZoomEngine {
   private resizeObserver: ResizeObserver | null = null;
   private dprQuery: MediaQueryList | null = null;
   private _colorRange: [number, number];
+  private _relief: Required<ReliefOptions> | null = null;
 
   /** Called after every render, e.g. to update overlays */
   onRender: (() => void) | null = null;
@@ -117,6 +124,7 @@ export class ZoomEngine {
       ...this._colorRange,
       { noData: options.noDataColor, background: options.backgroundColor },
     );
+    this.setRelief(options.relief ?? false);
     this.tiledImage.onTilesLoaded = () => {
       this.scheduleRender();
       this.onTilesLoaded?.();
@@ -272,6 +280,21 @@ export class ZoomEngine {
   setColorRange(min: number, max: number): void {
     this._colorRange = [min, max];
     this.tiledImage.setValueRange(min, max);
+    this.scheduleRender();
+  }
+
+  /** Relief shading in use, with defaults filled in, or null if it is off */
+  get relief(): Required<ReliefOptions> | null {
+    return this._relief && { ...this._relief };
+  }
+
+  /**
+   * Switch relief shading on (`true` or options) or off (`false`). Like the
+   * colour range, it applies instantly, without reloading tiles.
+   */
+  setRelief(relief: ReliefOptions | boolean): void {
+    this._relief = resolveRelief(relief);
+    this.tiledImage.setRelief(this._relief);
     this.scheduleRender();
   }
 

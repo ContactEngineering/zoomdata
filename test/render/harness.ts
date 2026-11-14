@@ -16,11 +16,15 @@
  * - Values are mapped linearly from the colour range to the test palette,
  *   whose entry i is RGB (i, 255 - i, 128), so the red channel encodes the
  *   value and blue tells data from background.
+ * - With relief shading, that colour is multiplied by a brightness factor
+ *   that follows from the slope of the surface at that level pixel: the
+ *   central difference of the reference heights, divided by the pixel size.
  *
  * Pixel centres within `edgeTolerance` (in screen pixels) of a texel border
  * or the image border are not checked, since either side is correct there.
  */
 import { commands } from 'vitest/browser';
+import { reliefFactor, type ReliefOptions } from '../../src/relief';
 
 export interface View {
   k: number;
@@ -41,6 +45,10 @@ export interface Reference {
   imageWidth: number;
   imageHeight: number;
   colorbarRange: { Minimum: number; Maximum: number };
+  tileSize: number;
+  overlap: number;
+  /** Image pixels per unit of the heights (the fixtures' heights are in µm) */
+  pixelsPerUnit: { x: number; y: number };
 }
 
 export type RGB = [number, number, number];
@@ -80,6 +88,12 @@ export async function loadReference(name: string): Promise<Reference> {
     imageWidth: descriptor.Image.Size.Width,
     imageHeight: descriptor.Image.Size.Height,
     colorbarRange: descriptor.Image.ColorbarRange,
+    tileSize: descriptor.Image.TileSize,
+    overlap: descriptor.Image.Overlap,
+    pixelsPerUnit: {
+      x: 1e-6 * descriptor.Image.PixelsPerMeter.Width,
+      y: 1e-6 * descriptor.Image.PixelsPerMeter.Height,
+    },
   };
 }
 
@@ -106,7 +120,7 @@ export type Expected =
   | { kind: 'skip' }
   | { kind: 'background' }
   | { kind: 'nodata' }
-  | { kind: 'value'; t: number; value: number };
+  | { kind: 'value'; t: number; value: number; shade?: number };
 
 export interface ExpectOptions {
   /** Colour range in physical units (default: the descriptor's ColorbarRange) */
@@ -115,6 +129,41 @@ export interface ExpectOptions {
   level?: number;
   /** Distance from a texel border below which a pixel is not checked */
   edgeTolerance?: number;
+  /** Relief shading the image is drawn with */
+  relief?: Required<ReliefOptions>;
+  /** Image pixels per unit of the heights, if not the reference's */
+  pixelsPerUnit?: { x: number; y: number };
+}
+
+/**
+ * Slope of the reference surface at a pixel of a level along one axis: the
+ * central difference of the heights, or a one-sided difference at the edge
+ * of the map and next to undefined points.
+ */
+function referenceSlope(
+  ref: Reference,
+  level: number,
+  i: number,
+  j: number,
+  axis: 'x' | 'y',
+  pixelsPerUnit: number,
+): number {
+  const l = ref.levels[level];
+  const stride = 2 ** (ref.maxLevel - level);
+  const at = (d: number) => {
+    const ii = axis === 'x' ? Math.min(l.width - 1, Math.max(0, i + d)) : i;
+    const jj = axis === 'y' ? Math.min(l.height - 1, Math.max(0, j + d)) : j;
+    const h = l.data[jj * l.width + ii];
+    // Next to an undefined point the difference starts at the pixel itself
+    return Number.isNaN(h)
+      ? { h: l.data[j * l.width + i], p: axis === 'x' ? i : j }
+      : { h, p: axis === 'x' ? ii : jj };
+  };
+  const a = at(-1);
+  const b = at(1);
+  if (b.p === a.p) return 0;
+  // Heights in units, distance in image pixels
+  return ((b.h - a.h) * pixelsPerUnit) / ((b.p - a.p) * stride);
 }
 
 function nearBorder(x: number, period: number, tol: number): boolean {
@@ -159,7 +208,25 @@ export function expectedImage(
         out[py * width + px] = { kind: 'nodata' };
       } else {
         const t = cmax > cmin ? Math.min(1, Math.max(0, (value - cmin) / (cmax - cmin))) : 0;
-        out[py * width + px] = { kind: 'value', t, value };
+        const e: Expected = { kind: 'value', t, value };
+        if (options.relief) {
+          const i = Math.floor(u / s);
+          const j = Math.floor(v / s);
+          // Without overlap, tiles do not hold their neighbours' values, so
+          // slopes at tile borders are one-sided; these are not checked
+          const T = ref.tileSize;
+          if (ref.overlap === 0 && [i % T, j % T].some((r) => r === 0 || r === T - 1)) {
+            out[py * width + px] = { kind: 'skip' };
+            continue;
+          }
+          const ppu = options.pixelsPerUnit ?? ref.pixelsPerUnit;
+          e.shade = reliefFactor(
+            referenceSlope(ref, level, i, j, 'x', ppu.x),
+            referenceSlope(ref, level, i, j, 'y', ppu.y),
+            options.relief,
+          );
+        }
+        out[py * width + px] = e;
       }
     }
   }
@@ -191,7 +258,10 @@ export interface Comparison {
 function describe(e: Expected): string {
   switch (e.kind) {
     case 'value':
-      return `value ${e.value.toPrecision(6)} (R=${(255 * e.t).toFixed(1)})`;
+      return (
+        `value ${e.value.toPrecision(6)} (R=${(255 * e.t).toFixed(1)})` +
+        (e.shade === undefined ? '' : ` × ${e.shade.toFixed(3)}`)
+      );
     default:
       return e.kind;
   }
@@ -223,12 +293,18 @@ export function compare(
       ok = close(actual, options.background, colorTol);
     } else if (e.kind === 'nodata') {
       ok = close(actual, options.noData, colorTol);
-    } else {
+    } else if (e.shade === undefined) {
       const r = 255 * e.t;
       ok =
         Math.abs(actual[0] - r) <= valueTol &&
         Math.abs(actual[0] + actual[1] - 255) <= colorTol &&
         Math.abs(actual[2] - 128) <= colorTol;
+    } else {
+      // The palette colour (r, 255 - r, 128) times the brightness factor
+      const r = 255 * e.t;
+      const f = e.shade;
+      const tol = valueTol * f + colorTol;
+      ok = [r, 255 - r, 128].every((c, k) => Math.abs(actual[k] - Math.min(255, c * f)) <= tol);
     }
     if (!ok) {
       result.mismatches++;
@@ -256,7 +332,8 @@ function expectedPixels(
     let c: RGB;
     if (e.kind === 'value') {
       const r = Math.round(255 * e.t);
-      c = [r, 255 - r, 128];
+      const f = e.shade ?? 1;
+      c = [r * f, (255 - r) * f, 128 * f];
     } else if (e.kind === 'background') {
       c = options.background;
     } else if (e.kind === 'nodata') {

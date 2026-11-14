@@ -8,6 +8,7 @@
  * the no-data colour.
  */
 import type { PixelRect } from './PyramidGeometry.js';
+import { lightVector, type ReliefOptions } from './relief.js';
 
 const VERTEX_SHADER = `#version 300 es
   in vec2 a_unit;
@@ -37,6 +38,13 @@ const FRAGMENT_SHADER = `#version 300 es
   // t = v * u_map.x + u_map.y maps a stored value to [0, 1]
   uniform vec2 u_map;
   uniform vec4 u_noData;
+  // Relief shading. u_slope: slope of the surface per difference of the
+  // stored values of neighbouring texels, along x and y. u_light: unit
+  // vector towards the light. u_shade: ambient share and 1 / sin(altitude);
+  // the latter is 0 if relief is off.
+  uniform vec2 u_slope;
+  uniform vec3 u_light;
+  uniform vec2 u_shade;
 
   in vec2 v_texel;
   out vec4 outColor;
@@ -44,6 +52,26 @@ const FRAGMENT_SHADER = `#version 300 es
   bool isNaN(float v) {
     uint bits = floatBitsToUint(v);
     return (bits & 0x7f800000u) == 0x7f800000u && (bits & 0x007fffffu) != 0u;
+  }
+
+  // Central difference of the stored values across texel p along d, per
+  // texel. Falls back to a one-sided difference at the edge of the texture
+  // and next to undefined values.
+  float difference(ivec2 p, ivec2 d, ivec2 size, float v) {
+    ivec2 a = clamp(p - d, ivec2(0), size - 1);
+    ivec2 b = clamp(p + d, ivec2(0), size - 1);
+    float va = texelFetch(u_data, a, 0).r;
+    float vb = texelFetch(u_data, b, 0).r;
+    if (isNaN(va)) {
+      a = p;
+      va = v;
+    }
+    if (isNaN(vb)) {
+      b = p;
+      vb = v;
+    }
+    int n = (b.x - a.x) + (b.y - a.y);
+    return n > 0 ? (vb - va) / float(n) : 0.0;
   }
 
   void main() {
@@ -58,6 +86,17 @@ const FRAGMENT_SHADER = `#version 300 es
     int n = textureSize(u_palette, 0).x;
     int i = clamp(int(floor(t * float(n))), 0, n - 1);
     outColor = texelFetch(u_palette, ivec2(i, 0), 0);
+
+    if (u_shade.y > 0.0) {
+      vec2 g = u_slope * vec2(
+        difference(p, ivec2(1, 0), size, v),
+        difference(p, ivec2(0, 1), size, v)
+      );
+      // Normal of the surface z = h(x, y)
+      vec3 normal = normalize(vec3(-g, 1.0));
+      float diffuse = max(dot(normal, u_light), 0.0) * u_shade.y;
+      outColor.rgb *= u_shade.x + (1.0 - u_shade.x) * diffuse;
+    }
   }
 `;
 
@@ -88,6 +127,12 @@ export interface TilePlacement {
   /** Maps stored values to [0, 1]: t = v * scale + offset */
   scale: number;
   offset: number;
+  /**
+   * Slope of the surface per difference of the stored values of
+   * neighbouring texels, along x and y; used for relief shading
+   */
+  slopeX: number;
+  slopeY: number;
 }
 
 /** Whether the browser can run the renderer */
@@ -126,6 +171,7 @@ export class WebGLRenderer {
   private uniforms!: Record<string, WebGLUniformLocation>;
 
   private view: ViewTransform = { k: 1, tx: 0, ty: 0 };
+  private relief: Required<ReliefOptions> | null = null;
   private lost = false;
 
   /** Called after the context was restored; textures must be re-created */
@@ -174,6 +220,9 @@ export class WebGLRenderer {
       'u_palette',
       'u_map',
       'u_noData',
+      'u_slope',
+      'u_light',
+      'u_shade',
     ]) {
       this.uniforms[name] = gl.getUniformLocation(this.program, name)!;
     }
@@ -277,6 +326,14 @@ export class WebGLRenderer {
     if (!this.lost) this.gl.deleteTexture(tileTexture.texture);
   }
 
+  /**
+   * Light the map from one direction (null: off). Applied in the shader;
+   * tile textures stay as they are.
+   */
+  setRelief(relief: Required<ReliefOptions> | null): void {
+    this.relief = relief;
+  }
+
   setPalette(palette: number[]): void {
     this.palette = palette;
     if (!this.lost) this.uploadPalette();
@@ -325,6 +382,16 @@ export class WebGLRenderer {
       y1 / stride - originY,
     );
     gl.uniform2f(this.uniforms.u_map, placement.scale, placement.offset);
+    const relief = this.relief;
+    if (relief) {
+      const e = relief.exaggeration;
+      gl.uniform2f(this.uniforms.u_slope, e * placement.slopeX, e * placement.slopeY);
+      const light = lightVector(relief.azimuth, relief.altitude);
+      gl.uniform3f(this.uniforms.u_light, ...light);
+      gl.uniform2f(this.uniforms.u_shade, relief.ambient, 1 / light[2]);
+    } else {
+      gl.uniform2f(this.uniforms.u_shade, 0, 0);
+    }
     const [r, g, b, a] = this.noData;
     gl.uniform4f(this.uniforms.u_noData, r / 255, g / 255, b / 255, a / 255);
 

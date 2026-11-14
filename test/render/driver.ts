@@ -3,6 +3,7 @@
  * harness that knows the engine's API; it renders a view synchronously after
  * all tiles it needs have loaded and returns the canvas pixels.
  */
+import type { ReliefOptions } from '../../src/relief';
 import type { Sample } from '../../src/sampling';
 import { StaticTileSource, type TileSource } from '../../src/TileSource';
 import { ZoomEngine } from '../../src/ZoomEngine';
@@ -77,6 +78,7 @@ export interface DriverOptions {
   /** Device pixels per CSS pixel (default: the browser's) */
   pixelRatio?: number;
   colorRange?: [number, number];
+  relief?: ReliefOptions | boolean;
   source?: TileSource;
   cacheBytes?: number;
 }
@@ -102,6 +104,7 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
     minValue: colorRange?.[0],
     maxValue: colorRange?.[1],
     cacheBytes: options.cacheBytes,
+    relief: options.relief,
     noDataColor: (NO_DATA[0] | (NO_DATA[1] << 8) | (NO_DATA[2] << 16) | (255 << 24)) >>> 0,
   });
 

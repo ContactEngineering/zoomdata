@@ -1,5 +1,6 @@
 import { DefaultController } from './DefaultController.js';
 import { CrossSections } from './CrossSections.js';
+import type { ReliefOptions } from './relief.js';
 import type { Sample } from './sampling.js';
 import { toTileSource, type TileSource } from './TileSource.js';
 import type { ZoomDataOptions } from './types.js';
@@ -94,6 +95,7 @@ export class ZoomData {
         cacheBytes: this.options.cacheBytes,
         loader: this.options.loader,
         autoResize: this.options.autoResize,
+        relief: this.options.relief,
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -286,6 +288,13 @@ export class ZoomData {
    */
   setColorRange(minValue: number, maxValue: number): void {
     this.engine?.setColorRange(minValue, maxValue);
+  }
+
+  /**
+   * Switch relief shading on (`true` or options) or off (`false`)
+   */
+  setRelief(relief: ReliefOptions | boolean): void {
+    this.engine?.setRelief(relief);
   }
 
   /**

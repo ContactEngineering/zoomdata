@@ -10,6 +10,7 @@ export { ZoomData } from './ZoomData.js';
 // Engine and default input handling
 export { ZoomEngine } from './ZoomEngine.js';
 export type { View, ZoomEngineEvents, ZoomEngineOptions } from './ZoomEngine.js';
+export type { ReliefOptions } from './relief.js';
 export { DefaultController } from './DefaultController.js';
 export { CrossSections, sampleProfile } from './CrossSections.js';
 export type { CrossSectionsOptions, Profile } from './CrossSections.js';

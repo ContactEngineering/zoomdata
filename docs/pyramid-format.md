@@ -32,13 +32,17 @@ tiles elsewhere; the reader addresses tiles only by level, column and row
 | `Encoding`                   | v2: yes         | `ScaleFactor` and `AddOffset` of the tile values (see below)          |
 | `ColorbarTitle`              | no              | Axis title, e.g. `Height (µm)`                                        |
 | `PixelsPerMeter`             | no              | `Width` and `Height`: pixels per metre along x and y, the pixel size  |
-| `Unit`                       | no              | Unit of the height values                                             |
+| `Unit`                       | no              | Length unit of the height values, e.g. `nm`, `um`                      |
 | `Detrend`                    | no              | Detrend mode applied before writing, e.g. `height`, `curvature`       |
 | `Downsample`                 | no              | How coarse levels were computed: `mean` or `nearest`                  |
 | `Colormap`                   | no              | Colour map name suggested by the writer                               |
 
-SurfaceTopography does not write `Unit` yet; the unit is part of
-`ColorbarTitle` and is the `unit` attribute of the tile variables.
+Pyramids written before SurfaceTopography recorded `Unit` do not have it;
+the reader then takes the unit from the `unit` attribute of `heights` in the
+tiles. With the unit and `PixelsPerMeter`, the reader knows heights and
+lateral distances in the same unit, which relief shading needs to compute
+slopes. Units are spelled as SurfaceTopography writes them: `m`, `mm`, `um`
+(or `µm`), `nm`, `A` (or `Å`), `pm` and so on.
 
 ## Geometry
 

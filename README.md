@@ -159,16 +159,17 @@ const viewer = new ZoomData(options: ZoomDataOptions);
 
 #### Options
 
-| Option               | Type         | Default                 | Description                                         |
-| -------------------- | ------------ | ----------------------- | --------------------------------------------------- |
-| `source`             | `TileSource` | –                       | Where descriptor and tiles come from                |
-| `rootUrl`            | `string`     | –                       | Shortcut for a `StaticTileSource`                   |
-| `colorPalette`       | `number[]`   | `Palettes.inferno(256)` | Color palette array                                 |
-| `minValue`           | `number`     | data minimum            | Value of the first palette entry, in physical units |
-| `maxValue`           | `number`     | data maximum            | Value of the last palette entry, in physical units  |
-| `noDataColor`        | `number`     | transparent             | Colour of undefined points (ABGR)                   |
-| `backgroundColor`    | `number`     | light grey              | Colour behind the image (ABGR)                      |
-| `zoomLevelIncrement` | `number`     | `0.1`                   | Zoom change per scroll                              |
+| Option               | Type                 | Default                 | Description                                         |
+| -------------------- | -------------------- | ----------------------- | --------------------------------------------------- |
+| `source`             | `TileSource`         | –                       | Where descriptor and tiles come from                |
+| `rootUrl`            | `string`             | –                       | Shortcut for a `StaticTileSource`                   |
+| `colorPalette`       | `number[]`           | `Palettes.inferno(256)` | Color palette array                                 |
+| `minValue`           | `number`             | data minimum            | Value of the first palette entry, in physical units |
+| `maxValue`           | `number`             | data maximum            | Value of the last palette entry, in physical units  |
+| `noDataColor`        | `number`             | transparent             | Colour of undefined points (ABGR)                   |
+| `backgroundColor`    | `number`             | light grey              | Colour behind the image (ABGR)                      |
+| `relief`             | `boolean` or options | off                     | Relief shading, see below                           |
+| `zoomLevelIncrement` | `number`             | `0.1`                   | Zoom change per scroll                              |
 
 #### Methods
 
@@ -207,6 +208,20 @@ const controller = new DefaultController(engine, {
   onDoubleClick: (x, y) => console.log('image position', x, y),
 });
 ```
+
+Relief shading lights the map from one direction, which shows fine
+structure that the colours alone do not resolve. Like the colour range, it
+is applied when drawing and changes instantly:
+
+```typescript
+engine.setRelief(true); // light from the top left, 45° above the horizon
+engine.setRelief({ azimuth: 315, altitude: 45, exaggeration: 4, ambient: 0.3 });
+engine.setRelief(false);
+```
+
+Slopes are true slopes if the pyramid states the unit of its heights and
+its pixel size; `exaggeration` multiplies them. Slopes come from the level
+in view, so the relief of an overview is that of the averaged surface.
 
 Cross-sections through a crosshair are an optional helper:
 

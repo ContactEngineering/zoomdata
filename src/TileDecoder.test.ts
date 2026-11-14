@@ -35,6 +35,8 @@ describe('decodeTile on pyramids written by SurfaceTopography', () => {
       });
       expect(tile.width).toBe(34);
       expect(tile.height).toBe(34);
+      // The fixtures' heights are in µm, spelled in ASCII
+      expect(tile.unit).toBe('um');
 
       // Version 1 holds (h - min) / (max - min) without attributes, version
       // 2 holds (h - add_offset) / scale_factor with CF attributes
@@ -95,6 +97,7 @@ describe('decodeTile variants', () => {
     const tile = decodeTile(load('decoder/offset64.nc'));
     expect([...tile.values]).toEqual(expected);
     expect(tile.encoding).toEqual({ scaleFactor: 2, addOffset: -1 });
+    expect(tile.unit).toBeNull();
     expect(tile.x).toBeNull();
   });
 

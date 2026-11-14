@@ -22,6 +22,11 @@ const selected = ref<string | null>(null);
 const loaded = ref(false);
 const paletteName = ref<PaletteName>('inferno');
 const autoRange = ref(true);
+const shaded = ref(true);
+// Vertical exaggeration of the relief as a power of two
+const exaggerationStep = ref(0);
+const exaggeration = computed(() => 2 ** exaggerationStep.value);
+const relief = computed(() => (shaded.value ? { exaggeration: exaggeration.value } : false));
 
 const info = ref<DatasetInfo | null>(null);
 const view = ref<ViewInfo | null>(null);
@@ -123,6 +128,7 @@ const probeText = computed(() => {
           :source="dataset.url"
           :palette="palette"
           :auto-range="autoRange"
+          :relief="relief"
           @ready="info = $event"
           @error="error = $event.message"
           @view="view = $event"
@@ -165,6 +171,25 @@ const probeText = computed(() => {
             class="colorbar"
           />
           <p class="note legend"><span class="swatch" /> no data</p>
+        </div>
+
+        <div class="group">
+          <label>Relief</label>
+          <label class="check">
+            <input v-model="shaded" type="checkbox" />
+            Light the map from the top left
+          </label>
+          <label class="slider" :class="{ off: !shaded }">
+            <span>Heights × {{ exaggeration }}</span>
+            <input
+              v-model.number="exaggerationStep"
+              type="range"
+              min="-3"
+              max="4"
+              step="1"
+              :disabled="!shaded"
+            />
+          </label>
         </div>
 
         <div class="group">
@@ -289,6 +314,24 @@ aside {
   align-items: center;
   gap: 8px;
   font-size: 14px;
+}
+
+.slider {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.slider.off {
+  color: var(--muted);
+}
+
+.slider input {
+  flex: 1;
+  min-width: 0;
 }
 
 .note {
