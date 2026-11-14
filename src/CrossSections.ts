@@ -226,6 +226,10 @@ export class CrossSections {
     if (!ctx) return;
     ctx.clearRect(0, 0, overlay.width, overlay.height);
     if (!this.position) return;
+    if (this.engine.isTilted) {
+      this.drawDraped(ctx);
+      return;
+    }
 
     // Convert image pixel coordinates to screen coordinates
     const { x: screenX, y: screenY } = this.engine.imageToScreen(this.position.x, this.position.y);
@@ -257,6 +261,50 @@ export class CrossSections {
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(screenX, screenY, 4.5, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  /**
+   * In the tilted view the two lines follow the surface. They are drawn on
+   * top of the map, also where the surface hides them.
+   */
+  private drawDraped(ctx: CanvasRenderingContext2D): void {
+    const { x, y } = this.position!;
+    const engine = this.engine;
+    ctx.strokeStyle = 'rgba(255, 75, 75, 0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+    const trace = (profile: Profile | null, at: (p: number) => [number, number]) => {
+      if (!profile) return;
+      ctx.beginPath();
+      let pen = false;
+      for (let i = 0; i < profile.values.length; i++) {
+        const value = profile.values[i];
+        // Break the line where data is undefined or not loaded
+        if (!Number.isFinite(value)) {
+          pen = false;
+          continue;
+        }
+        // The value belongs to the middle of its block
+        const p = engine.imageToScreen(...at(profile.positions[i] + profile.stride / 2), value);
+        if (pen) ctx.lineTo(p.x, p.y);
+        else ctx.moveTo(p.x, p.y);
+        pen = true;
+      }
+      ctx.stroke();
+    };
+    trace(this.horizontalProfile(), (p) => [p, y]);
+    trace(this.verticalProfile(), (p) => [x, p]);
+
+    // Dot at the crosshair, on the surface
+    const sample = engine.sampleAt(x, y, engine.level);
+    const dot = engine.imageToScreen(x, y, sample?.value);
+    ctx.fillStyle = 'rgba(255, 75, 75, 0.9)';
+    ctx.beginPath();
+    ctx.arc(dot.x, dot.y, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.lineWidth = 1;
     ctx.stroke();
   }
 

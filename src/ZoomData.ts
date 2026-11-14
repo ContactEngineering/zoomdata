@@ -1,5 +1,6 @@
 import { DefaultController } from './DefaultController.js';
 import { CrossSections } from './CrossSections.js';
+import type { ReliefOptions } from './relief.js';
 import type { Sample } from './sampling.js';
 import { toTileSource, type TileSource } from './TileSource.js';
 import type { ZoomDataOptions } from './types.js';
@@ -94,6 +95,8 @@ export class ZoomData {
         cacheBytes: this.options.cacheBytes,
         loader: this.options.loader,
         autoResize: this.options.autoResize,
+        relief: this.options.relief,
+        verticalExaggeration: this.options.verticalExaggeration,
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -190,6 +193,7 @@ export class ZoomData {
     const { width, height } = this.engine.size;
     const f = k / view.k;
     this.engine.setView({
+      ...view,
       k,
       x: width / 2 - f * (width / 2 - view.x),
       y: height / 2 - f * (height / 2 - view.y),
@@ -286,6 +290,20 @@ export class ZoomData {
    */
   setColorRange(minValue: number, maxValue: number): void {
     this.engine?.setColorRange(minValue, maxValue);
+  }
+
+  /**
+   * Exaggerate the heights of the surface in the tilted view
+   */
+  setVerticalExaggeration(exaggeration: number): void {
+    this.engine?.setVerticalExaggeration(exaggeration);
+  }
+
+  /**
+   * Switch relief shading on (`true` or options) or off (`false`)
+   */
+  setRelief(relief: ReliefOptions | boolean): void {
+    this.engine?.setRelief(relief);
   }
 
   /**

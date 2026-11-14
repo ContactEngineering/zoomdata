@@ -1,5 +1,7 @@
+import { footprint, isPlain, MAX_TILT, orbit, project, unproject, type Camera } from './camera.js';
 import { Palettes } from './palettes.js';
 import type { TileAddress } from './PyramidGeometry.js';
+import { resolveRelief, type ReliefOptions } from './relief.js';
 import type { Sample } from './sampling.js';
 import { TiledImage } from './TiledImage.js';
 import type { TileLoaderOptions } from './TileLoader.js';
@@ -9,11 +11,28 @@ import { ZoomConfiguration } from './ZoomConfiguration.js';
 /**
  * View transform in CSS pixels of the canvas: `screen = k * image + (x, y)`,
  * where image coordinates are pixels of the full-resolution image.
+ *
+ * With a `rotation` or a `tilt` the map shows as a surface in an
+ * orthographic view: turned clockwise by `rotation` degrees and tipped back
+ * by `tilt` degrees (0 looks straight down, at most 75). (x, y) is then the
+ * screen position of the image origin at the reference height, the middle
+ * of the range of the values.
  */
 export interface View {
   k: number;
   x: number;
   y: number;
+  rotation?: number;
+  tilt?: number;
+}
+
+/** A point of the surface under a position of the canvas */
+export interface Pick {
+  /** Image position */
+  x: number;
+  y: number;
+  /** Value there, or null outside the map or where no tile is loaded */
+  sample: Sample | null;
 }
 
 /** Events of ZoomEngine.on() */
@@ -44,6 +63,13 @@ export interface ZoomEngineOptions {
   /** Concurrency and retries of tile requests */
   loader?: TileLoaderOptions;
   /**
+   * Relief shading: light the map from one direction so that slopes show.
+   * `true` uses the defaults (default: off)
+   */
+  relief?: ReliefOptions | boolean;
+  /** Vertical exaggeration of the surface in the tilted view (default: 1) */
+  verticalExaggeration?: number;
+  /**
    * Size the canvas' drawing buffer to its CSS size times the device pixel
    * ratio, and follow changes of either (default: true)
    */
@@ -62,7 +88,7 @@ export class ZoomEngine {
   private readonly tiledImage: TiledImage;
   private readonly autoResize: boolean;
 
-  private _view: View = { k: 1, x: 0, y: 0 };
+  private _view: Required<View> = { k: 1, x: 0, y: 0, rotation: 0, tilt: 0 };
   private pixelRatio = 1;
   private cssWidth = 0;
   private cssHeight = 0;
@@ -70,6 +96,8 @@ export class ZoomEngine {
   private resizeObserver: ResizeObserver | null = null;
   private dprQuery: MediaQueryList | null = null;
   private _colorRange: [number, number];
+  private _relief: Required<ReliefOptions> | null = null;
+  private _verticalExaggeration = 1;
 
   /** Called after every render, e.g. to update overlays */
   onRender: (() => void) | null = null;
@@ -117,6 +145,7 @@ export class ZoomEngine {
       ...this._colorRange,
       { noData: options.noDataColor, background: options.backgroundColor },
     );
+    this.setRelief(options.relief ?? false);
     this.tiledImage.onTilesLoaded = () => {
       this.scheduleRender();
       this.onTilesLoaded?.();
@@ -130,7 +159,7 @@ export class ZoomEngine {
       this.watchPixelRatio();
     }
     this._view = this.fitView();
-    this.scheduleRender();
+    this.setVerticalExaggeration(options.verticalExaggeration ?? 1);
   }
 
   /** Read the CSS size and pixel ratio, and size the drawing buffer */
@@ -188,18 +217,36 @@ export class ZoomEngine {
     return this.pixelRatio;
   }
 
-  get view(): View {
+  /** The view, with rotation and tilt (0 in the plain view) */
+  get view(): Required<View> {
     return { ...this._view };
+  }
+
+  /** Whether the map shows as a tilted or rotated surface */
+  get isTilted(): boolean {
+    return !isPlain(this._view);
+  }
+
+  private get camera(): Camera {
+    const { k, x, y, rotation, tilt } = this._view;
+    return { k, tx: x, ty: y, rotation, tilt };
   }
 
   /**
    * Set the view transform and schedule a render
    */
   setView(view: View): void {
-    if (!(view.k > 0) || !Number.isFinite(view.x) || !Number.isFinite(view.y)) {
+    const { rotation = 0, tilt = 0 } = view;
+    if (
+      !(view.k > 0) ||
+      !Number.isFinite(view.x) ||
+      !Number.isFinite(view.y) ||
+      !Number.isFinite(rotation) ||
+      !(tilt >= 0 && tilt <= MAX_TILT)
+    ) {
       throw new Error(`Invalid view ${JSON.stringify(view)}`);
     }
-    this._view = { ...view };
+    this._view = { k: view.k, x: view.x, y: view.y, rotation, tilt };
     this.scheduleRender();
     this.onViewChange?.(this.view);
     for (const listener of this.listeners.view) listener(this.view);
@@ -226,29 +273,167 @@ export class ZoomEngine {
   /**
    * View that shows the whole image centred in the canvas
    */
-  fitView(): View {
+  fitView(): Required<View> {
     const { Width: w, Height: h } = this.config.imageSize;
     const k = Math.min(this.cssWidth / w, this.cssHeight / h);
-    return { k, x: (this.cssWidth - k * w) / 2, y: (this.cssHeight - k * h) / 2 };
+    return {
+      k,
+      x: (this.cssWidth - k * w) / 2,
+      y: (this.cssHeight - k * h) / 2,
+      rotation: 0,
+      tilt: 0,
+    };
   }
 
-  /** Image position of a canvas position in CSS pixels */
+  /**
+   * View turned and tilted to the given angles (degrees) about the point of
+   * the map at a canvas position, by default the centre of the canvas. The
+   * tilt is limited to [0, 75].
+   */
+  orbitView(rotation: number, tilt: number, pivot?: { x: number; y: number }): Required<View> {
+    const p = pivot ?? { x: this.cssWidth / 2, y: this.cssHeight / 2 };
+    const c = orbit(this.camera, rotation, tilt, p.x, p.y);
+    return { k: c.k, x: c.tx, y: c.ty, rotation: c.rotation, tilt: c.tilt };
+  }
+
+  /**
+   * Image position of a canvas position in CSS pixels. In the tilted view
+   * this is the point of the reference plane there; see pick() for the
+   * point of the surface.
+   */
   screenToImage(x: number, y: number): { x: number; y: number } {
-    const { k, x: tx, y: ty } = this._view;
-    return { x: (x - tx) / k, y: (y - ty) / k };
+    const p = unproject(this.camera, x, y);
+    return { x: p.u, y: p.v };
   }
 
-  /** Canvas position in CSS pixels of an image position */
-  imageToScreen(x: number, y: number): { x: number; y: number } {
-    const { k, x: tx, y: ty } = this._view;
-    return { x: k * x + tx, y: k * y + ty };
+  /**
+   * Canvas position in CSS pixels of an image position; in the tilted view,
+   * of the point of the surface with the given value there, or of the
+   * reference plane if no value is given
+   */
+  imageToScreen(x: number, y: number, value?: number): { x: number; y: number } {
+    const z = value === undefined || Number.isNaN(value) ? 0 : this.heightOf(value);
+    const p = project(this.camera, x, y, z);
+    return { x: p.x, y: p.y };
   }
 
-  /** Visible part of the image, in image pixels (may extend beyond the image) */
+  /**
+   * Height of a value above the reference plane of the tilted view, in
+   * image pixels, with the vertical exaggeration applied
+   */
+  heightOf(value: number): number {
+    const { scale, reference } = this.tiledImage.surfaceHeight();
+    return (value - reference) * scale;
+  }
+
+  /**
+   * Visible part of the image, in image pixels (may extend beyond the
+   * image). In the tilted view this is the bounding box of everything that
+   * can show.
+   */
   visibleImageRect(): { x0: number; y0: number; x1: number; y1: number } {
-    const a = this.screenToImage(0, 0);
-    const b = this.screenToImage(this.cssWidth, this.cssHeight);
-    return { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
+    if (!this.isTilted) return footprint(this.camera, this.cssWidth, this.cssHeight);
+    const { zMin, zMax } = this.tiledImage.surfaceHeight();
+    return footprint(this.camera, this.cssWidth, this.cssHeight, zMin, zMax);
+  }
+
+  /**
+   * Height of the surface of the tilted view at an image position, in image
+   * pixels above the reference plane, or null outside the map or where no
+   * tile is loaded. The surface is the one the renderer draws: a vertex at
+   * the centre of every pixel of the level, squares split along one
+   * diagonal, undefined values in the reference plane.
+   */
+  private surfaceZ(u: number, v: number, level: number): number | null {
+    const geometry = this.config.geometry;
+    if (!(u >= 0 && v >= 0 && u <= geometry.width && v <= geometry.height)) return null;
+    const s = geometry.stride(level);
+    const size = geometry.levelSize(level);
+    const { scale, reference } = this.tiledImage.surfaceHeight();
+    const fx = u / s - 0.5;
+    const fy = v / s - 0.5;
+    const i0 = Math.floor(fx);
+    const j0 = Math.floor(fy);
+    const wx = fx - i0;
+    const wy = fy - j0;
+    const z: number[] = [];
+    for (const [di, dj] of [
+      [0, 0],
+      [1, 0],
+      [0, 1],
+      [1, 1],
+    ]) {
+      const i = Math.min(size.width - 1, Math.max(0, i0 + di));
+      const j = Math.min(size.height - 1, Math.max(0, j0 + dj));
+      // The last pixels of a level may be cut off by the border of the map
+      const sample = this.sampleAt(
+        Math.min((i + 0.5) * s, geometry.width - 1e-6),
+        Math.min((j + 0.5) * s, geometry.height - 1e-6),
+        level,
+      );
+      if (!sample) return null;
+      z.push(Number.isNaN(sample.value) ? 0 : (sample.value - reference) * scale);
+    }
+    return wx + wy <= 1
+      ? z[0] + wx * (z[1] - z[0]) + wy * (z[2] - z[0])
+      : z[3] + (1 - wx) * (z[2] - z[3]) + (1 - wy) * (z[1] - z[3]);
+  }
+
+  /**
+   * Point of the map that shows at a canvas position (CSS pixels), with its
+   * value from the level in view. In the tilted view this is the foremost
+   * point of the surface there. Reads the tiles in memory only.
+   */
+  pick(x: number, y: number): Pick {
+    const camera = this.camera;
+    const level = this.level;
+    const at = (z: number) => {
+      const p = unproject(camera, x, y, z);
+      return { x: p.u, y: p.v };
+    };
+    const result = (p: { x: number; y: number }, found = true): Pick => ({
+      ...p,
+      sample: found ? this.sampleAt(p.x, p.y, level) : null,
+    });
+    const tan = Math.tan((camera.tilt * Math.PI) / 180);
+    if (tan === 0) return result(at(0));
+
+    // Follow the line of sight from the viewer, starting above the highest
+    // possible point: the surface shows where the line first crosses it,
+    // from above or, seen from under an edge, from below. A step moves the
+    // position by a fifth of a pixel of the level in view.
+    const { zMin, zMax } = this.tiledImage.surfaceHeight();
+    const stride = this.config.geometry.stride(level);
+    const margin = 1e-6 * (zMax - zMin) + 1e-9;
+    const top = zMax + margin;
+    const bottom = zMin - margin;
+    // Height of the line of sight above the surface
+    const above = (z: number) => {
+      const p = at(z);
+      const surface = this.surfaceZ(p.x, p.y, level);
+      return surface === null ? null : z - surface;
+    };
+    const steps = Math.min(8192, Math.ceil(((top - bottom) * tan) / (0.2 * stride)) + 1);
+    let zPrev = top;
+    let fPrev = above(top);
+    for (let n = 1; n <= steps; n++) {
+      const z = top - ((top - bottom) * n) / steps;
+      const f = above(z);
+      if (f !== null && fPrev !== null && f > 0 !== fPrev > 0) {
+        let hi = zPrev;
+        let lo = z;
+        for (let i = 0; i < 40; i++) {
+          const mid = (hi + lo) / 2;
+          const fMid = above(mid);
+          if (fMid !== null && fMid > 0 === fPrev > 0) hi = mid;
+          else lo = mid;
+        }
+        return result(at((hi + lo) / 2));
+      }
+      zPrev = z;
+      fPrev = f;
+    }
+    return result(at(0), false);
   }
 
   /**
@@ -272,6 +457,40 @@ export class ZoomEngine {
   setColorRange(min: number, max: number): void {
     this._colorRange = [min, max];
     this.tiledImage.setValueRange(min, max);
+    this.scheduleRender();
+  }
+
+  /** Relief shading in use, with defaults filled in, or null if it is off */
+  get relief(): Required<ReliefOptions> | null {
+    return this._relief && { ...this._relief };
+  }
+
+  /**
+   * Switch relief shading on (`true` or options) or off (`false`). Like the
+   * colour range, it applies instantly, without reloading tiles.
+   */
+  setRelief(relief: ReliefOptions | boolean): void {
+    this._relief = resolveRelief(relief);
+    this.tiledImage.setRelief(this._relief);
+    this.scheduleRender();
+  }
+
+  /** Vertical exaggeration of the surface in the tilted view */
+  get verticalExaggeration(): number {
+    return this._verticalExaggeration;
+  }
+
+  /**
+   * Exaggerate the heights of the surface in the tilted view. At 1 heights
+   * and lateral distances have the same scale, if the pyramid states the
+   * unit of its values and its pixel size.
+   */
+  setVerticalExaggeration(exaggeration: number): void {
+    if (!(exaggeration >= 0) || !Number.isFinite(exaggeration)) {
+      throw new Error(`Invalid vertical exaggeration ${exaggeration}`);
+    }
+    this._verticalExaggeration = exaggeration;
+    this.tiledImage.setVerticalExaggeration(exaggeration);
     this.scheduleRender();
   }
 
@@ -311,8 +530,8 @@ export class ZoomEngine {
    */
   render(): void {
     const dpr = this.pixelRatio;
-    const { k, x, y } = this._view;
-    this.tiledImage.render(this.canvas, { k: k * dpr, tx: x * dpr, ty: y * dpr });
+    const { k, x, y, rotation, tilt } = this._view;
+    this.tiledImage.render(this.canvas, { k: k * dpr, tx: x * dpr, ty: y * dpr, rotation, tilt });
     this.onRender?.();
     for (const listener of this.listeners.render) listener();
   }

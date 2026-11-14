@@ -417,7 +417,8 @@ export class LineScanRenderer {
     const start = Math.ceil(lo / step) * step;
     const ticks: number[] = [];
     for (let t = start; t <= hi + step * 1e-9; t += step) {
-      ticks.push(parseFloat(t.toPrecision(10))); // strip floating-point drift
+      // Strip floating-point drift, also from the tick at zero
+      ticks.push(Math.abs(t) < step * 1e-9 ? 0 : parseFloat(t.toPrecision(10)));
     }
     return ticks;
   }

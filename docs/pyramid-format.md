@@ -32,13 +32,17 @@ tiles elsewhere; the reader addresses tiles only by level, column and row
 | `Encoding`                   | v2: yes         | `ScaleFactor` and `AddOffset` of the tile values (see below)          |
 | `ColorbarTitle`              | no              | Axis title, e.g. `Height (µm)`                                        |
 | `PixelsPerMeter`             | no              | `Width` and `Height`: pixels per metre along x and y, the pixel size  |
-| `Unit`                       | no              | Unit of the height values                                             |
+| `Unit`                       | no              | Length unit of the height values, e.g. `nm`, `um`                      |
 | `Detrend`                    | no              | Detrend mode applied before writing, e.g. `height`, `curvature`       |
 | `Downsample`                 | no              | How coarse levels were computed: `mean` or `nearest`                  |
 | `Colormap`                   | no              | Colour map name suggested by the writer                               |
 
-SurfaceTopography does not write `Unit` yet; the unit is part of
-`ColorbarTitle` and is the `unit` attribute of the tile variables.
+Pyramids written before SurfaceTopography recorded `Unit` do not have it;
+the reader then takes the unit from the `unit` attribute of `heights` in the
+tiles. With the unit and `PixelsPerMeter`, the reader knows heights and
+lateral distances in the same unit, which relief shading needs to compute
+slopes. Units are spelled as SurfaceTopography writes them: `m`, `mm`, `um`
+(or `µm`), `nm`, `A` (or `Å`), `pm` and so on.
 
 ## Geometry
 
@@ -60,8 +64,13 @@ Let `W` x `H` be the image size, `T` the tile size and `o` the overlap.
   clipped to the level. Edge tiles are therefore smaller.
 
 The reader computes all of this from the descriptor (`PyramidGeometry`) and
-rejects tiles whose shape does not match. Nothing in it depends on the
-overlap being non-zero; the renderer draws only tile cores.
+rejects tiles whose shape does not match. It works for any overlap,
+including 0, and the plain view draws only tile cores.
+
+An overlap of at least 1 is recommended: relief shading and the tilted view
+use the values just outside a tile's core, to compute slopes at its border
+and to join the surfaces of adjacent tiles. With an overlap of 0 the map
+still shows, with one-sided slopes and small steps at tile borders.
 
 ## Tiles
 

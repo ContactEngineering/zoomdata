@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { orbit, unproject } from '../../src/camera';
+import { DEFAULT_RELIEF } from '../../src/relief';
 import { supportsWebGL2 } from '../../src/WebGLRenderer';
 import { ZoomEngine } from '../../src/ZoomEngine';
 import { StaticTileSource, type TileSource } from '../../src/TileSource';
@@ -10,6 +12,7 @@ import {
   formatComparison,
   loadReference,
   referenceValue,
+  surfaceHeightAt,
   writeDiagnostics,
   type ExpectOptions,
   type Reference,
@@ -150,6 +153,280 @@ describe('tile loader', () => {
     } finally {
       release();
     }
+  });
+});
+
+describe('relief shading', () => {
+  const RELIEF = DEFAULT_RELIEF;
+  const RELIEF_VIEWS: Record<string, View> = {
+    'finest level, 1:1': { k: 1, tx: 5.3, ty: 2.7 },
+    'magnified 4x across tile borders': { k: 4, tx: -100.2, ty: -90.6 },
+    'level max-2, 1:4': { k: 0.25, tx: 10.4, ty: 6.2 },
+    'between levels (k=0.7)': { k: 0.7, tx: 4.1, ty: 3.3 },
+  };
+
+  // With overlap 1 and 2, slopes at tile borders use the neighbouring tile's
+  // values; without overlap they are one-sided there and not checked
+  for (const fixture of ['pattern-ov1', 'pattern-ov2', 'pattern-ov0']) {
+    for (const [name, view] of Object.entries(RELIEF_VIEWS)) {
+      it(`${fixture}: ${name}`, async () => {
+        const { ref, driver } = await setup(fixture, { relief: true });
+        await check(`relief ${fixture} ${name}`, ref, await driver.render(view), view, {
+          relief: RELIEF,
+        });
+      });
+    }
+  }
+
+  it('shades the map next to undefined points and the edge of the map', async () => {
+    // Format version 2 with a hole; the view shows the hole and three edges
+    const { ref, driver } = await setup('nan-v2', { relief: true });
+    const view = { k: 2, tx: 30.3, ty: -40.6 };
+    await check('relief nan-v2', ref, await driver.render(view), view, { relief: RELIEF });
+  });
+
+  it('follows the direction of the light, the exaggeration and the ambient light', async () => {
+    const options = { azimuth: 100, altitude: 30, exaggeration: 0.4, ambient: 0.1 };
+    const { ref, driver } = await setup('pattern-ov1', { relief: options });
+    const view = { k: 1, tx: 5.3, ty: 2.7 };
+    await check('relief options', ref, await driver.render(view), view, { relief: options });
+  });
+
+  it('shades a coarser level shown while finer tiles load', async () => {
+    const { ref, driver } = await setup('pattern-ov2', { relief: true });
+    const coarse = ref.maxLevel - 2;
+    await driver.render({ k: 0.25, tx: 0, ty: 0 });
+    const release = driver.blockTiles(new RegExp(`/dzdata_files/${ref.maxLevel}/`));
+    try {
+      const view = { k: 1, tx: 5, ty: 3 };
+      await check('relief fallback', ref, driver.renderNow(view), view, {
+        level: coarse,
+        relief: RELIEF,
+      });
+    } finally {
+      release();
+    }
+  });
+
+  it('switches on and off without re-uploading textures', async () => {
+    const { ref, driver } = await setup('pattern-ov1');
+    const view = { k: 1, tx: 5, ty: 3 };
+    await check('relief off', ref, await driver.render(view), view);
+    const upload = vi.spyOn(WebGL2RenderingContext.prototype, 'texImage2D');
+    try {
+      driver.engine.setRelief(true);
+      expect(driver.engine.relief).toEqual(RELIEF);
+      await check('relief on', ref, driver.renderNow(view), view, { relief: RELIEF });
+      driver.engine.setRelief(false);
+      expect(driver.engine.relief).toBeNull();
+      await check('relief off again', ref, driver.renderNow(view), view);
+      expect(upload).not.toHaveBeenCalled();
+    } finally {
+      upload.mockRestore();
+    }
+  });
+
+  it('assumes a height scale where the pixel size is unknown', async () => {
+    // Without the pixel size, the range of the values is taken to be a
+    // tenth of the smaller side of the map (100 pixels)
+    const ref = await loadReference('pattern-ov1');
+    const inner = new StaticTileSource(fixtureUrl('pattern-ov1'));
+    const source: TileSource = {
+      async descriptor() {
+        const d = await inner.descriptor();
+        delete d.Image.PixelsPerMeter;
+        return d;
+      },
+      tileUrl: (level, col, row) => inner.tileUrl(level, col, row),
+    };
+    const { driver } = await setup('pattern-ov1', { source, relief: true });
+    const view = { k: 1, tx: 5.3, ty: 2.7 };
+    const span = ref.colorbarRange.Maximum - ref.colorbarRange.Minimum;
+    const assumed = (0.1 * 100) / span;
+    await check('relief assumed scale', ref, await driver.render(view), view, {
+      relief: RELIEF,
+      pixelsPerUnit: { x: assumed, y: assumed },
+    });
+  });
+});
+
+describe('orthographic view', () => {
+  // A full turn is the plain view, but drawn as a surface mesh
+  describe('draws the plain image through the surface mesh', () => {
+    for (const fixture of ['pattern-ov1', 'pattern-ov0', 'pattern-ov2', 'nan-v2']) {
+      for (const [name, view] of Object.entries({
+        'finest level': { k: 1, tx: 5.3, ty: 2.7 },
+        'magnified 4x across tile borders': { k: 4, tx: -100.2, ty: -90.6 },
+        'level max-2': { k: 0.25, tx: 10.4, ty: 6.2 },
+      })) {
+        it(`${fixture}: ${name}`, async () => {
+          const { ref, driver } = await setup(fixture, { relief: true });
+          const pixels = await driver.render({ ...view, rotation: 360 });
+          await check(`mesh ${fixture} ${name}`, ref, pixels, view, { relief: DEFAULT_RELIEF });
+        });
+      }
+    }
+  });
+
+  describe('turns the map', () => {
+    for (const rotation of [90, 180, 37]) {
+      it(`by ${rotation} degrees`, async () => {
+        const { ref, driver } = await setup('pattern-ov1');
+        // Keep the middle of the map in the middle of the canvas
+        const view = orbit(
+          { k: 1.5, tx: -12.5, ty: 5, rotation: 0, tilt: 0 },
+          rotation,
+          0,
+          WIDTH / 2,
+          HEIGHT / 2,
+        );
+        await check(`turned ${rotation}`, ref, await driver.render(view), view);
+      });
+    }
+  });
+
+  describe('tilts the map', () => {
+    // Heights are exaggerated so that the surface clearly leaves its plane:
+    // the pattern is 1 µm high and 75 µm wide
+    // Views are magnified enough for a level pixel to cover more than a
+    // screen pixel also along the tilt, or little could be checked
+    const cases: [string, string, number, number, number, number][] = [
+      ['pattern-ov1', 'from the front', 0, 50, 3, 8],
+      ['pattern-ov1', 'turned and steep', 30, 70, 4, 8],
+      ['pattern-ov2', 'from behind', 200, 40, 3, 20],
+      ['pattern-ov1', 'a coarse level', 320, 30, 0.7, 30],
+      ['nan-v2', 'with undefined points', 60, 55, 3, 8],
+      ['pattern-ov1', 'at true scale', 15, 60, 3, 1],
+    ];
+    for (const [fixture, name, rotation, tilt, k, exaggeration] of cases) {
+      it(`${fixture}: ${name}`, async () => {
+        const { ref, driver } = await setup(fixture, { verticalExaggeration: exaggeration });
+        const fit = { k, tx: (WIDTH - k * 150) / 2, ty: (HEIGHT - k * 100) / 2 };
+        const view = orbit({ ...fit, rotation: 0, tilt: 0 }, rotation, tilt, WIDTH / 2, HEIGHT / 2);
+        const pixels = await driver.render(view);
+        const expected = expectedImage(ref, view, WIDTH, HEIGHT, {
+          verticalExaggeration: exaggeration,
+        });
+        const result = compare(pixels, expected, WIDTH, OPTIONS);
+        if (result.mismatches > 0) {
+          await writeDiagnostics(
+            `tilted ${fixture} ${name}`,
+            pixels,
+            expected,
+            WIDTH,
+            HEIGHT,
+            OPTIONS,
+          );
+        }
+        expect(result.mismatches, formatComparison(result)).toBe(0);
+        // Much of the canvas is checked and shows the map
+        const shown = expected.filter((e) => e.kind !== 'skip' && e.kind !== 'background').length;
+        expect(shown).toBeGreaterThan(k > 1 ? 0.15 * WIDTH * HEIGHT : 300);
+      });
+    }
+
+    it('with relief shading', async () => {
+      const options = { verticalExaggeration: 8, relief: true };
+      const { ref, driver } = await setup('pattern-ov1', options);
+      const view = orbit({ k: 1, tx: 25, ty: 30, rotation: 0, tilt: 0 }, 20, 45, 100, 80);
+      await check('tilted relief', ref, await driver.render(view), view, {
+        verticalExaggeration: 8,
+        relief: DEFAULT_RELIEF,
+      });
+    });
+
+    it('hides what lies behind higher ground', async () => {
+      // Seen from a low angle with strong exaggeration, the ridges of the
+      // pattern hide the valleys behind them: fewer level pixels show than
+      // in the plain view, and the image still matches
+      const { ref, driver } = await setup('pattern-ov1', { verticalExaggeration: 40 });
+      const view = orbit({ k: 4, tx: -200, ty: -120, rotation: 0, tilt: 0 }, 0, 70, 100, 80);
+      const pixels = await driver.render(view);
+      const expected = expectedImage(ref, view, WIDTH, HEIGHT, { verticalExaggeration: 40 });
+      const result = compare(pixels, expected, WIDTH, OPTIONS);
+      expect(result.mismatches, formatComparison(result)).toBe(0);
+      expect(result.checked).toBeGreaterThan(0.2 * WIDTH * HEIGHT);
+
+      // Some points of the surface are hidden: what shows at their place
+      // on the canvas is another point, in front of them. On a flat
+      // surface every point shows.
+      const hidden = () => {
+        let n = 0;
+        for (let v = 30.5; v < 70; v += 2) {
+          for (let u = 50.5; u < 100; u += 2) {
+            const value = referenceValue(ref, ref.maxLevel, u, v)!;
+            const at = driver.engine.imageToScreen(u, v, value);
+            const pick = driver.engine.pick(at.x, at.y);
+            if (!pick.sample || Math.hypot(pick.x - u, pick.y - v) > 1) n++;
+          }
+        }
+        return n;
+      };
+      expect(hidden()).toBeGreaterThan(50);
+      driver.engine.setVerticalExaggeration(0);
+      expect(hidden()).toBe(0);
+    });
+  });
+
+  it('finds the point of the surface under a canvas position', async () => {
+    const { ref, driver } = await setup('pattern-ov1', { verticalExaggeration: 8 });
+    const view = orbit({ k: 2, tx: -50, ty: -20, rotation: 0, tilt: 0 }, 30, 60, 100, 80);
+    await driver.render(view);
+    const engine = driver.engine;
+    let hits = 0;
+    for (let y = 10; y < HEIGHT; y += 20) {
+      for (let x = 10; x < WIDTH; x += 20) {
+        const pick = engine.pick(x, y);
+        if (!pick.sample) continue;
+        hits++;
+        // The value is that of the level pixel the point lies in
+        expect(pick.sample.value).toBeCloseTo(
+          referenceValue(ref, ref.maxLevel, pick.x, pick.y)!,
+          6,
+        );
+        // The plane point under the same canvas position at the height of
+        // the surface there is the picked point: it lies on the line of sight
+        const z = surfaceHeightAt(ref, ref.maxLevel, pick.x, pick.y, 8);
+        const { u, v } = unproject(view, x, y, z);
+        expect(Math.hypot(u - pick.x, v - pick.y)).toBeLessThan(1e-3);
+      }
+    }
+    expect(hits).toBeGreaterThan(20);
+    // Outside the map
+    expect(engine.pick(1, 1).sample).toBeNull();
+  });
+
+  it('reports the turned view and its footprint', async () => {
+    const { driver } = await setup('pattern-ov1');
+    const engine = driver.engine;
+    expect(engine.isTilted).toBe(false);
+    engine.setView(engine.orbitView(90, 60));
+    expect(engine.isTilted).toBe(true);
+    expect(engine.view.rotation).toBe(90);
+    expect(engine.view.tilt).toBe(60);
+    // The point at the centre of the canvas stays where it was
+    const centre = engine.screenToImage(WIDTH / 2, HEIGHT / 2);
+    expect(centre.x).toBeCloseTo(75, 6);
+    expect(centre.y).toBeCloseTo(50, 6);
+    const back = engine.imageToScreen(centre.x, centre.y);
+    expect(back.x).toBeCloseTo(WIDTH / 2, 9);
+    expect(back.y).toBeCloseTo(HEIGHT / 2, 9);
+    // Everything on the canvas lies within the footprint
+    const rect = engine.visibleImageRect();
+    for (const [x, y] of [
+      [0, 0],
+      [WIDTH, HEIGHT],
+    ]) {
+      const p = engine.screenToImage(x, y);
+      expect(p.x).toBeGreaterThanOrEqual(rect.x0 - 1e-9);
+      expect(p.x).toBeLessThanOrEqual(rect.x1 + 1e-9);
+      expect(p.y).toBeGreaterThanOrEqual(rect.y0 - 1e-9);
+      expect(p.y).toBeLessThanOrEqual(rect.y1 + 1e-9);
+    }
+    expect(() => engine.setView({ k: 1, x: 0, y: 0, tilt: 80 })).toThrow('Invalid view');
+    expect(() => engine.setVerticalExaggeration(-1)).toThrow('exaggeration');
+    // The limit of the tilt
+    expect(engine.orbitView(0, 89).tilt).toBe(75);
   });
 });
 

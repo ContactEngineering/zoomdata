@@ -159,16 +159,18 @@ const viewer = new ZoomData(options: ZoomDataOptions);
 
 #### Options
 
-| Option               | Type         | Default                 | Description                                         |
-| -------------------- | ------------ | ----------------------- | --------------------------------------------------- |
-| `source`             | `TileSource` | –                       | Where descriptor and tiles come from                |
-| `rootUrl`            | `string`     | –                       | Shortcut for a `StaticTileSource`                   |
-| `colorPalette`       | `number[]`   | `Palettes.inferno(256)` | Color palette array                                 |
-| `minValue`           | `number`     | data minimum            | Value of the first palette entry, in physical units |
-| `maxValue`           | `number`     | data maximum            | Value of the last palette entry, in physical units  |
-| `noDataColor`        | `number`     | transparent             | Colour of undefined points (ABGR)                   |
-| `backgroundColor`    | `number`     | light grey              | Colour behind the image (ABGR)                      |
-| `zoomLevelIncrement` | `number`     | `0.1`                   | Zoom change per scroll                              |
+| Option                 | Type                 | Default                 | Description                                         |
+| ---------------------- | -------------------- | ----------------------- | --------------------------------------------------- |
+| `source`               | `TileSource`         | –                       | Where descriptor and tiles come from                |
+| `rootUrl`              | `string`             | –                       | Shortcut for a `StaticTileSource`                   |
+| `colorPalette`         | `number[]`           | `Palettes.inferno(256)` | Color palette array                                 |
+| `minValue`             | `number`             | data minimum            | Value of the first palette entry, in physical units |
+| `maxValue`             | `number`             | data maximum            | Value of the last palette entry, in physical units  |
+| `noDataColor`          | `number`             | transparent             | Colour of undefined points (ABGR)                   |
+| `backgroundColor`      | `number`             | light grey              | Colour behind the image (ABGR)                      |
+| `relief`               | `boolean` or options | off                     | Relief shading, see below                           |
+| `verticalExaggeration` | `number`             | `1`                     | Height scale of the surface in the tilted view      |
+| `zoomLevelIncrement`   | `number`             | `0.1`                   | Zoom change per scroll                              |
 
 #### Methods
 
@@ -207,6 +209,39 @@ const controller = new DefaultController(engine, {
   onDoubleClick: (x, y) => console.log('image position', x, y),
 });
 ```
+
+Relief shading lights the map from one direction, which shows fine
+structure that the colours alone do not resolve. Like the colour range, it
+is applied when drawing and changes instantly:
+
+```typescript
+engine.setRelief(true); // light from the top left, 45° above the horizon
+engine.setRelief({ azimuth: 315, altitude: 45, exaggeration: 4, ambient: 0.3 });
+engine.setRelief(false);
+```
+
+Slopes are true slopes if the pyramid states the unit of its heights and
+its pixel size; `exaggeration` multiplies them. Slopes come from the level
+in view, so the relief of an overview is that of the averaged surface.
+
+The map can also be shown as a surface, turned and tilted, in an
+orthographic view. The scale stays the same everywhere, so zooming, levels
+and the scale bar work as in the plain view:
+
+```typescript
+// Turn by 30° and tip back by 55°, about the centre of the canvas
+engine.setView(engine.orbitView(30, 55));
+engine.setVerticalExaggeration(10);
+const { x, y, sample } = engine.pick(canvasX, canvasY); // point of the surface there
+engine.setView(engine.fitView()); // back to the plain view
+```
+
+The tilt is at most 75°, measured from looking straight down. At a vertical
+exaggeration of 1, heights and lateral distances have the same scale if the
+pyramid states the unit of its heights and its pixel size. With the default
+controller, dragging with the right mouse button or with Shift turns and
+tilts the map. Tiles need an overlap of at least one pixel to join without
+steps in this view and for relief shading without seams.
 
 Cross-sections through a crosshair are an optional helper:
 
