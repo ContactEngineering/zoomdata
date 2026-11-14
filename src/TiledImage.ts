@@ -22,6 +22,8 @@ export class TiledImage {
   private renderer: WebGLRenderer | null = null;
   private textureCache: Map<string, TileTexture> = new Map();
   private colorRange: [number, number] = [0, 1];
+  // Keys of the tiles the last rendered view shows
+  private viewTiles: Set<string> = new Set();
 
   /** Callback invoked when tiles finish loading and need re-render */
   onTilesLoaded: RenderCallback | null = null;
@@ -37,8 +39,11 @@ export class TiledImage {
     this.tileCache = new TileCache({
       maxBytes: cacheBytes,
       sizeOf: (key, tile) => tile.byteSize() + (this.textureCache.get(key)?.bytes ?? 0),
-      // Never evict the base level, so there is always something to draw
-      isPinned: (key) => Number(key.slice(0, key.indexOf('/'))) <= baseLevel,
+      // Never evict the base level, so there is always something to draw,
+      // nor the tiles of the current view: evicting those would refetch
+      // them on the next frame, forever, if they exceed the budget
+      isPinned: (key) =>
+        Number(key.slice(0, key.indexOf('/'))) <= baseLevel || this.viewTiles.has(key),
     });
     this.tileCache.onEvict = (key, tile) => {
       this.deleteTexture(key);
@@ -210,13 +215,17 @@ export class TiledImage {
       x1: (canvas.width - tx) / k,
       y1: (canvas.height - ty) / k,
     };
-    for (const address of this.config.geometry.tilesInRect(level, visible)) {
+    const addresses = this.config.geometry.tilesInRect(level, visible);
+    this.viewTiles = new Set(addresses.map((a) => TileCache.makeKey(a.level, a.row, a.col)));
+    for (const address of addresses) {
       const tile = this.getOrFetchTile(address);
       const clip = this.coreInImage(address);
       if (!this.drawTile(tile, address, clip)) {
         this.drawFallback(address, clip);
       }
     }
+    // Tiles that left the view are no longer pinned
+    this.tileCache.trim();
   }
 
   /**

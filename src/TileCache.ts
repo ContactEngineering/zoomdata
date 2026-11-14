@@ -5,7 +5,7 @@ export interface TileCacheOptions {
   maxBytes?: number;
   /** Bytes held for a tile, CPU and GPU (default: the tile's own data) */
   sizeOf?: (key: string, tile: Tile) => number;
-  /** Tiles that are never evicted, e.g. a coarse base level */
+  /** Tiles that are never evicted, e.g. a coarse base level or the tiles in view */
   isPinned?: (key: string, tile: Tile) => boolean;
 }
 
@@ -107,7 +107,14 @@ export class TileCache {
     return this.cache.delete(key);
   }
 
-  private evict(keep: string): void {
+  /**
+   * Evict tiles if over budget, e.g. after the set of pinned tiles changed
+   */
+  trim(): void {
+    this.evict(null);
+  }
+
+  private evict(keep: string | null): void {
     if (this.totalBytes <= this.maxBytes) return;
     for (const [key, tile] of [...this.cache]) {
       if (this.totalBytes <= this.maxBytes) break;

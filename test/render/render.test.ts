@@ -176,6 +176,29 @@ describe('tile cache', () => {
   });
 });
 
+describe('tile cache over budget', () => {
+  test('keeps the tiles in view even if they exceed the budget', async () => {
+    // All 20 tiles of the finest level are in view, about 200 kB. Evicting
+    // tiles in view would refetch them on every frame.
+    const budget = 30_000;
+    const { ref, driver } = await setup('pattern-ov1', { cacheBytes: budget });
+    const view = { k: 1, tx: 5, ty: 3 };
+    await check('over budget', ref, await driver.render(view), view);
+    const fetches = driver.tileFetches();
+    for (let i = 0; i < 5; i++) {
+      await check('over budget', ref, await driver.render(view), view);
+    }
+    expect(driver.tileFetches()).toBe(fetches);
+    expect(driver.cacheStats().bytes).toBeGreaterThan(budget);
+
+    // Tiles are released again once they leave the view; this one shows a
+    // single tile
+    const corner = { k: 8, tx: -16.3, ty: -16.6 };
+    await check('over budget corner', ref, await driver.render(corner), corner);
+    expect(driver.cacheStats().bytes).toBeLessThanOrEqual(budget);
+  });
+});
+
 describe('WebGL2 renderer', () => {
   it('is supported in the test browser', () => {
     expect(supportsWebGL2()).toBe(true);

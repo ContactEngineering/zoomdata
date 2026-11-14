@@ -268,6 +268,17 @@ describe('TileCache', () => {
       expect([...c.keys()]).toEqual(['0/0_0', '5/0_1']);
     });
 
+    it('trim() evicts tiles that are no longer pinned', () => {
+      const pinned = new Set(['a', 'b']);
+      const c = makeCache(50, { isPinned: (key) => pinned.has(key) });
+      c.set('a', fakeTile(40));
+      c.set('b', fakeTile(40));
+      pinned.delete('a');
+      expect(c.size).toBe(2);
+      c.trim();
+      expect([...c.keys()]).toEqual(['b']);
+    });
+
     it('may exceed the budget with pinned tiles alone', () => {
       const c = makeCache(50, { isPinned: () => true });
       c.set('a', fakeTile(40));
