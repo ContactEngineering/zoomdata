@@ -16,7 +16,7 @@ const rows = Object.entries(summary)
 const lines = [
   '## Test coverage',
   '',
-  'Unit tests and render tests together.',
+  'Unit tests and render tests together. CI fails below 90% of lines, statements and functions, or 80% of branches.',
   '',
   `| File | ${metrics.map((m) => m[0].toUpperCase() + m.slice(1)).join(' | ')} |`,
   `|---|${metrics.map(() => '--:').join('|')}|`,

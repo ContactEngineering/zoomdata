@@ -38,6 +38,8 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/**/*.d.ts'],
       reporter: ['text', 'html', 'json-summary', 'lcov'],
+      // A run with --coverage fails below these
+      thresholds: { lines: 90, statements: 90, functions: 90, branches: 80 },
     },
   },
 });
