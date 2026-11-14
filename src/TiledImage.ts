@@ -24,8 +24,10 @@ export class TiledImage {
   private renderer: WebGLRenderer | null = null;
   private textureCache: Map<string, TileTexture> = new Map();
   private colorRange: [number, number] = [0, 1];
-  // Keys of the tiles the last rendered view shows
+  // Keys of the tiles the last rendered view shows or helpers asked for
   private viewTiles: Set<string> = new Set();
+  // Tiles wanted beyond the view, by owner
+  private extraTiles = new Map<string, TileAddress[]>();
 
   /** Callback invoked when tiles finish loading and need re-render */
   onTilesLoaded: RenderCallback | null = null;
@@ -223,7 +225,13 @@ export class TiledImage {
     };
     const geometry = this.config.geometry;
     const addresses = geometry.tilesInRect(level, visible);
-    this.viewTiles = new Set(addresses.map((a) => TileCache.makeKey(a.level, a.row, a.col)));
+    // Pin the tiles in view and those helpers asked for before touching the
+    // cache, or they could be evicted and refetched
+    this.viewTiles = new Set(
+      [...addresses, ...[...this.extraTiles.values()].flat()].map((a) =>
+        TileCache.makeKey(a.level, a.row, a.col),
+      ),
+    );
 
     // The base level loads first, then visible tiles from the centre out
     const requests: TileRequest[] = [];
@@ -243,9 +251,30 @@ export class TiledImage {
         this.drawFallback(address, clip);
       }
     }
+    // Tiles helpers need beyond the view load after the visible ones
+    const wanted = new Set(requests.map((r) => r.key));
+    let priority = Number.MAX_SAFE_INTEGER / 2;
+    for (const addresses of this.extraTiles.values()) {
+      for (const address of addresses) {
+        const request = this.request(address, priority++);
+        if (!wanted.has(request.key)) {
+          wanted.add(request.key);
+          requests.push(request);
+        }
+      }
+    }
     this.loader.update(requests);
     // Tiles that left the view are no longer pinned
     this.tileCache.trim();
+  }
+
+  /**
+   * Keep tiles loaded beyond the view, e.g. along a cross-section. Replaces
+   * the tiles previously requested by the same owner.
+   */
+  setExtraTiles(owner: string, addresses: TileAddress[]): void {
+    if (addresses.length === 0) this.extraTiles.delete(owner);
+    else this.extraTiles.set(owner, addresses);
   }
 
   /**
@@ -301,12 +330,13 @@ export class TiledImage {
    * Value at an image position from the finest level in memory; does not
    * fetch tiles or change their recency in the cache
    */
-  sampleAt(imageX: number, imageY: number): Sample | null {
+  sampleAt(imageX: number, imageY: number, maxLevel?: number): Sample | null {
     return sampleAt(
       this.config.geometry,
       (level, col, row) => this.tileCache.peek(TileCache.makeKey(level, row, col)),
       imageX,
       imageY,
+      maxLevel,
     );
   }
 

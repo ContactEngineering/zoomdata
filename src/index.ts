@@ -9,8 +9,13 @@ export { ZoomData } from './ZoomData';
 
 // Engine and default input handling
 export { ZoomEngine } from './ZoomEngine';
-export type { View, ZoomEngineOptions } from './ZoomEngine';
+export type { View, ZoomEngineEvents, ZoomEngineOptions } from './ZoomEngine';
 export { DefaultController } from './DefaultController';
+export { CrossSections, sampleProfile } from './CrossSections';
+export type { CrossSectionsOptions, Profile } from './CrossSections';
+export { LineScanRenderer } from './LineScanRenderer';
+export type { LineScanData } from './LineScanRenderer';
+export { Scalebar } from './Scalebar';
 export type { DefaultControllerOptions } from './DefaultController';
 
 // Supporting classes (for advanced usage)

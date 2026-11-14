@@ -4,8 +4,8 @@
  */
 
 export interface LineScanData {
-  values: Float32Array;
-  positions: Float32Array;
+  values: ArrayLike<number>;
+  positions: ArrayLike<number>;
   crosshairPos: number;
   posMin: number;
   posMax: number;
@@ -174,7 +174,11 @@ export class LineScanRenderer {
       const n = data.values.length;
       for (let i = 0; i < n; i++) {
         const v = data.values[i];
-        if (!isFinite(v)) continue;
+        // Break the trace where data is undefined
+        if (!isFinite(v)) {
+          firstPoint = true;
+          continue;
+        }
         const p = data.positions[i];
         const px = isVertical ? vValToX(v) : hPosToX(p);
         const py = isVertical ? vPosToY(p) : hValToY(v);

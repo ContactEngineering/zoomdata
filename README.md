@@ -200,6 +200,20 @@ const controller = new DefaultController(engine, {
 });
 ```
 
+Cross-sections through a crosshair are an optional helper:
+
+```typescript
+import { CrossSections } from 'zoomdata';
+
+const sections = new CrossSections(engine, {
+  overlayCanvas, // transparent canvas on top of the engine's canvas
+  horizontalCanvas,
+  verticalCanvas,
+});
+sections.place(imageX, imageY);
+const profile = sections.horizontalProfile(); // values in physical units
+```
+
 The engine sizes the canvas' drawing buffer to its CSS size times the
 device pixel ratio and follows changes of either (`autoResize: true`).
 

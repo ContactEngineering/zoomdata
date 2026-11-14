@@ -1,4 +1,5 @@
 import { Palettes } from './palettes';
+import type { TileAddress } from './PyramidGeometry';
 import type { Sample } from './sampling';
 import { TiledImage } from './TiledImage';
 import type { TileLoaderOptions } from './TileLoader';
@@ -13,6 +14,16 @@ export interface View {
   k: number;
   x: number;
   y: number;
+}
+
+/** Events of ZoomEngine.on() */
+export interface ZoomEngineEvents {
+  /** After every render */
+  render: () => void;
+  /** After the view changed */
+  view: (view: View) => void;
+  /** After tiles finished loading */
+  tiles: () => void;
 }
 
 export interface ZoomEngineOptions {
@@ -67,6 +78,12 @@ export class ZoomEngine {
   /** Called when tiles finished loading (after the render they caused is scheduled) */
   onTilesLoaded: (() => void) | null = null;
 
+  private listeners: { [E in keyof ZoomEngineEvents]: Set<ZoomEngineEvents[E]> } = {
+    render: new Set(),
+    view: new Set(),
+    tiles: new Set(),
+  };
+
   /**
    * Load the pyramid descriptor and create an engine drawing to the canvas.
    * The initial view fits the image into the canvas.
@@ -103,6 +120,7 @@ export class ZoomEngine {
     this.tiledImage.onTilesLoaded = () => {
       this.scheduleRender();
       this.onTilesLoaded?.();
+      for (const listener of this.listeners.tiles) listener();
     };
 
     this.measure();
@@ -184,6 +202,25 @@ export class ZoomEngine {
     this._view = { ...view };
     this.scheduleRender();
     this.onViewChange?.(this.view);
+    for (const listener of this.listeners.view) listener(this.view);
+  }
+
+  /**
+   * Listen to an event, in addition to the on* callbacks; returns a
+   * function that removes the listener
+   */
+  on<E extends keyof ZoomEngineEvents>(event: E, listener: ZoomEngineEvents[E]): () => void {
+    this.listeners[event].add(listener);
+    return () => this.listeners[event].delete(listener);
+  }
+
+  /**
+   * Keep tiles loaded beyond the view, e.g. along a cross-section; they load
+   * after the visible tiles. Replaces earlier requests of the same owner.
+   */
+  requestTiles(owner: string, addresses: TileAddress[]): void {
+    this.tiledImage.setExtraTiles(owner, addresses);
+    this.scheduleRender();
   }
 
   /**
@@ -216,11 +253,11 @@ export class ZoomEngine {
 
   /**
    * Value at an image position, in physical units, from the finest level in
-   * memory. Does not fetch tiles; returns null outside the image or when no
-   * covering tile is loaded.
+   * memory, or from maxLevel or coarser. Does not fetch tiles; returns null
+   * outside the image or when no covering tile is loaded.
    */
-  sampleAt(imageX: number, imageY: number): Sample | null {
-    return this.tiledImage.sampleAt(imageX, imageY);
+  sampleAt(imageX: number, imageY: number, maxLevel?: number): Sample | null {
+    return this.tiledImage.sampleAt(imageX, imageY, maxLevel);
   }
 
   /** Level drawn for the current view */
@@ -277,6 +314,7 @@ export class ZoomEngine {
     const { k, x, y } = this._view;
     this.tiledImage.render(this.canvas, { k: k * dpr, tx: x * dpr, ty: y * dpr });
     this.onRender?.();
+    for (const listener of this.listeners.render) listener();
   }
 
   dispose(): void {
