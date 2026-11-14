@@ -9,9 +9,6 @@ import { ZoomEngine } from '../../src/ZoomEngine';
 import type { RGB, Reference, View } from './harness';
 import { fixtureUrl, testPalette } from './harness';
 
-/** Set while the renderer is known not to draw the reference image */
-export const KNOWN_BROKEN = false;
-
 /** Colour the canvas is cleared to (0.95 grey) */
 export const BACKGROUND: RGB = [242, 242, 242];
 /** Undefined points */

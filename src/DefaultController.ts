@@ -1,4 +1,4 @@
-import type { View, ZoomEngine } from './ZoomEngine';
+import type { ZoomEngine } from './ZoomEngine';
 
 export interface DefaultControllerOptions {
   /** Element receiving input (default: the engine's canvas) */
@@ -214,5 +214,3 @@ export class DefaultController {
     event.preventDefault();
   };
 }
-
-export type { View };

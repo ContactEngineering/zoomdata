@@ -285,20 +285,6 @@ export class TiledImage {
   }
 
   /**
-   * Render the tiled image to a canvas
-   * @deprecated Use render() with a view transform
-   */
-  renderTo(
-    canvas: HTMLCanvasElement,
-    xPos: number,
-    yPos: number,
-    fractionalZoomLevel: number,
-  ): void {
-    const k = 1 / this.config.scaleFactorAtZoomLevel(fractionalZoomLevel);
-    this.render(canvas, { k, tx: xPos, ty: yPos });
-  }
-
-  /**
    * Clear the tile cache
    */
   clearCache(): void {
@@ -316,14 +302,6 @@ export class TiledImage {
       }
     }
     this.textureCache.clear();
-  }
-
-  /**
-   * Look up a tile in the cache without triggering a fetch.
-   * Returns undefined if the tile is not currently cached.
-   */
-  getCachedTile(level: number, row: number, col: number): Tile | undefined {
-    return this.tileCache.get(TileCache.makeKey(level, row, col));
   }
 
   /**

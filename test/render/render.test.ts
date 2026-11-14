@@ -2,14 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { supportsWebGL2 } from '../../src/WebGLRenderer';
 import { ZoomEngine } from '../../src/ZoomEngine';
 import { StaticTileSource, type TileSource } from '../../src/TileSource';
-import {
-  BACKGROUND,
-  KNOWN_BROKEN,
-  NO_DATA,
-  createDriver,
-  type Driver,
-  type DriverOptions,
-} from './driver';
+import { BACKGROUND, NO_DATA, createDriver, type Driver, type DriverOptions } from './driver';
 import {
   compare,
   expectedImage,
@@ -22,9 +15,6 @@ import {
   type Reference,
   type View,
 } from './harness';
-
-// Expected failures are reported as passing, unexpected passes as failing
-const test = KNOWN_BROKEN ? it.fails : it;
 
 const WIDTH = 200;
 const HEIGHT = 160;
@@ -75,13 +65,13 @@ const VIEWS: Record<string, View> = {
 for (const fixture of ['pattern-ov1', 'pattern-ov0', 'pattern-ov2']) {
   describe(`${fixture}`, () => {
     for (const [name, view] of Object.entries(VIEWS)) {
-      test(name, async () => {
+      it(name, async () => {
         const { ref, driver } = await setup(fixture);
         await check(`${fixture} ${name}`, ref, await driver.render(view), view);
       });
     }
 
-    test('falls back to a cached coarser level while tiles load', async () => {
+    it('falls back to a cached coarser level while tiles load', async () => {
       const { ref, driver } = await setup(fixture);
       const coarse = ref.maxLevel - 2;
       await driver.render({ k: 0.25, tx: 0, ty: 0 });
@@ -99,7 +89,7 @@ for (const fixture of ['pattern-ov1', 'pattern-ov0', 'pattern-ov2']) {
 describe('tile source', () => {
   // Tiles are addressed only through the source; this one hands out a
   // different, query-signed URL per tile, as a host with presigned URLs would
-  test('renders tiles from per-tile URLs', async () => {
+  it('renders tiles from per-tile URLs', async () => {
     const ref = await loadReference('pattern-ov1');
     const inner = new StaticTileSource(fixtureUrl('pattern-ov1'));
     const requested: string[] = [];
@@ -120,7 +110,7 @@ describe('tile source', () => {
 });
 
 describe('tile loader', () => {
-  test('recovers from expired tile URLs', async () => {
+  it('recovers from expired tile URLs', async () => {
     // URLs carry a token; the server rejects all but the current one with 403
     const ref = await loadReference('pattern-ov1');
     const inner = new StaticTileSource(fixtureUrl('pattern-ov1'));
@@ -147,7 +137,7 @@ describe('tile loader', () => {
     }
   });
 
-  test('draws a coarser level while finer tiles load', async () => {
+  it('draws a coarser level while finer tiles load', async () => {
     // Nothing was loaded before; the base level (5) loads first
     const { ref, driver } = await setup('pattern-ov2');
     const view = { k: 1, tx: 5, ty: 3 };
@@ -164,7 +154,7 @@ describe('tile loader', () => {
 });
 
 describe('colour range', () => {
-  test('maps a narrower range and clamps outside it', async () => {
+  it('maps a narrower range and clamps outside it', async () => {
     const { ref, driver } = await setup('pattern-ov1');
     const { Minimum: mn, Maximum: mx } = ref.colorbarRange;
     const range: [number, number] = [mn + 0.25 * (mx - mn), mn + 0.75 * (mx - mn)];
@@ -195,11 +185,11 @@ describe('sampling', () => {
 });
 
 describe('tile cache', () => {
-  test('stays within its byte budget while panning', async () => {
-    // A finest-level tile is 34 x 34 float32 values plus coordinates on the
-    // CPU and as much again on the GPU: about 9.8 kB. The budget holds a
-    // handful of them, fewer than the 20 tiles of the finest level.
-    const budget = 60_000;
+  it('stays within its byte budget while panning', async () => {
+    // A finest-level tile is 34 x 34 float32 values on the CPU and as much
+    // again on the GPU: 9.2 kB. The budget holds the four tiles a view may
+    // show and the base level, but not a fifth tile.
+    const budget = 45_000;
     const { ref, driver } = await setup('pattern-ov1', { cacheBytes: budget });
     const deleted = vi.spyOn(WebGL2RenderingContext.prototype, 'deleteTexture');
     try {
@@ -226,7 +216,7 @@ describe('tile cache', () => {
 });
 
 describe('tile cache over budget', () => {
-  test('keeps the tiles in view even if they exceed the budget', async () => {
+  it('keeps the tiles in view even if they exceed the budget', async () => {
     // All 20 tiles of the finest level are in view, about 200 kB. Evicting
     // tiles in view would refetch them on every frame.
     const budget = 30_000;
@@ -303,7 +293,7 @@ describe('WebGL2 renderer', () => {
     expect(supportsWebGL2()).toBe(true);
   });
 
-  test('changes the colour range without re-uploading textures', async () => {
+  it('changes the colour range without re-uploading textures', async () => {
     const { ref, driver } = await setup('pattern-ov1');
     const view = { k: 1, tx: 5, ty: 3 };
     await driver.render(view);
@@ -320,7 +310,7 @@ describe('WebGL2 renderer', () => {
     }
   });
 
-  test('restores after context loss without refetching tiles', async () => {
+  it('restores after context loss without refetching tiles', async () => {
     const { ref, driver } = await setup('nan-v2');
     const view = { k: 1, tx: 5, ty: 3 };
     await driver.render(view);
@@ -337,14 +327,14 @@ describe('undefined points and format version 2', () => {
       'finest level': { k: 1, tx: 5, ty: 3 },
       'level max-2': { k: 0.25, tx: 10.4, ty: 6.2 },
     })) {
-      test(`${fixture}: ${name}`, async () => {
+      it(`${fixture}: ${name}`, async () => {
         const { ref, driver } = await setup(fixture);
         await check(`${fixture} ${name}`, ref, await driver.render(view), view);
       });
     }
   }
 
-  test('flat-v2: constant map', async () => {
+  it('flat-v2: constant map', async () => {
     const { ref, driver } = await setup('flat-v2', { colorRange: [0, 1] });
     const view = { k: 2, tx: 7, ty: 5 };
     await check('flat-v2', ref, await driver.render(view), view, { colorRange: [0, 1] });

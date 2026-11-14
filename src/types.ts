@@ -82,8 +82,6 @@ export interface ZoomDataOptions {
   loader?: TileLoaderOptions;
   /** Memory budget for tiles in bytes, CPU and GPU (default: 256 MiB) */
   cacheBytes?: number;
-  /** Enable debug rendering (tile borders) */
-  debug?: boolean;
 }
 
 /** State of a tile in the cache */

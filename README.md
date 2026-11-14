@@ -160,7 +160,6 @@ const viewer = new ZoomData(options: ZoomDataOptions);
 | `noDataColor`        | `number`     | transparent             | Colour of undefined points (ABGR)                   |
 | `backgroundColor`    | `number`     | light grey              | Colour behind the image (ABGR)                      |
 | `zoomLevelIncrement` | `number`     | `0.1`                   | Zoom change per scroll                              |
-| `debug`              | `boolean`    | `false`                 | Show tile borders                                   |
 
 #### Methods
 

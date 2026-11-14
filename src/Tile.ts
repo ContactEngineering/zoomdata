@@ -19,8 +19,6 @@ export class Tile {
   private encoding: ValueEncoding = { scaleFactor: 1, addOffset: 0 };
   private state: TileState = TileState.Pending;
   private error: Error | null = null;
-  xCoords: Float64Array | null = null;
-  yCoords: Float64Array | null = null;
 
   /** Width of the tile in pixels (set after load) */
   width: number = 0;
@@ -75,8 +73,6 @@ export class Tile {
       this.height = decoded.height;
       this.data = decoded.values;
       this.encoding = decoded.encoding ?? this.options.encoding ?? { scaleFactor: 1, addOffset: 0 };
-      this.xCoords = decoded.x;
-      this.yCoords = decoded.y;
       this.state = TileState.Ready;
       this.error = null;
     } catch (err) {
@@ -120,21 +116,7 @@ export class Tile {
    * Bytes of tile data held in CPU memory
    */
   byteSize(): number {
-    return (
-      (this.data?.byteLength ?? 0) +
-      (this.xCoords?.byteLength ?? 0) +
-      (this.yCoords?.byteLength ?? 0)
-    );
-  }
-
-  /** get the x coordinates and y coordinates in micrometers */
-
-  getXCoords(): Float64Array | null {
-    return this.xCoords;
-  }
-
-  getYCoords(): Float64Array | null {
-    return this.yCoords;
+    return this.data?.byteLength ?? 0;
   }
 
   /**
@@ -142,8 +124,6 @@ export class Tile {
    */
   clearCache(): void {
     this.data = null;
-    this.xCoords = null;
-    this.yCoords = null;
     this.state = TileState.Pending;
   }
 }
