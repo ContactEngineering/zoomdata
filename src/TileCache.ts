@@ -49,6 +49,15 @@ export class TileCache {
   }
 
   /**
+   * Get a tile without marking it as recently used
+   * @param key - The cache key
+   * @returns The tile if found, undefined otherwise
+   */
+  peek(key: string): Tile | undefined {
+    return this.cache.get(key);
+  }
+
+  /**
    * Check if a tile exists in the cache
    * @param key - The cache key
    * @returns True if the tile exists

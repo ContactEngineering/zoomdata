@@ -15,6 +15,7 @@ import {
   fixtureUrl,
   formatComparison,
   loadReference,
+  referenceValue,
   writeDiagnostics,
   type ExpectOptions,
   type Reference,
@@ -126,6 +127,25 @@ describe('colour range', () => {
     await driver.render(view);
     driver.setColorRange(...range);
     await check('colour range', ref, await driver.render(view), view, { colorRange: range });
+  });
+});
+
+describe('sampling', () => {
+  it('reads the finest level in memory, without fetching', async () => {
+    const { ref, driver } = await setup('nan-v2');
+    await driver.render({ k: 0.25, tx: 0, ty: 0 });
+    const fetches = driver.tileFetches();
+    const coarse = driver.sampleAt(97.3, 66.1)!;
+    expect(coarse.level).toBe(ref.maxLevel - 2);
+    expect(coarse.value).toBeCloseTo(referenceValue(ref, ref.maxLevel - 2, 97.3, 66.1)!, 6);
+    expect(driver.tileFetches()).toBe(fetches);
+
+    await driver.render({ k: 1, tx: 0, ty: 0 });
+    const fine = driver.sampleAt(97.3, 66.1)!;
+    expect(fine.level).toBe(ref.maxLevel);
+    expect(fine.value).toBeCloseTo(referenceValue(ref, ref.maxLevel, 97.3, 66.1)!, 6);
+    // Inside the hole of undefined points
+    expect(driver.sampleAt(40, 60)!.value).toBeNaN();
   });
 });
 

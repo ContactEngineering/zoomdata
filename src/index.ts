@@ -17,6 +17,8 @@ export { ZoomConfiguration } from './ZoomConfiguration';
 export { PyramidGeometry } from './PyramidGeometry';
 export type { PixelRect, TileAddress } from './PyramidGeometry';
 export { StaticTileSource } from './TileSource';
+export { sampleAt } from './sampling';
+export type { Sample, TileLookup } from './sampling';
 export type { TileSource } from './TileSource';
 export { WebGLRenderer, supportsWebGL2 } from './WebGLRenderer';
 export type { ViewTransform } from './WebGLRenderer';

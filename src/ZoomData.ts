@@ -1,6 +1,7 @@
 import { Palettes } from './palettes';
 import { ZoomConfiguration } from './ZoomConfiguration';
 import { TiledImage } from './TiledImage';
+import type { Sample } from './sampling';
 import { toTileSource, type TileSource } from './TileSource';
 import type { ZoomDataOptions } from './types';
 import { LineScanRenderer, LineScanData } from './LineScanRenderer';
@@ -808,6 +809,24 @@ export class ZoomData {
     this.hScanRenderer?.drawEmpty();
     this.vScanRenderer?.drawEmpty();
     this.scheduleRender();
+  }
+
+  /**
+   * Image position (image pixels) of a canvas position (canvas pixels)
+   */
+  screenToImage(x: number, y: number): { x: number; y: number } | null {
+    if (!this.config) return null;
+    const scale = this.config.scaleFactorAtZoomLevel(this.zoomLevel);
+    return { x: (x - this.xPos) * scale, y: (y - this.yPos) * scale };
+  }
+
+  /**
+   * Value at an image position, in physical units, from the finest level
+   * currently in memory. Does not fetch tiles; returns null outside the
+   * image or when no covering tile is loaded.
+   */
+  sampleAt(imageX: number, imageY: number): Sample | null {
+    return this.tiledImage?.sampleAt(imageX, imageY) ?? null;
   }
 
   /**

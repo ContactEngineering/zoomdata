@@ -3,6 +3,7 @@
  * harness that knows the viewer's API; it renders a view synchronously after
  * all tiles it needs have loaded and returns the canvas pixels.
  */
+import type { Sample } from '../../src/sampling';
 import { StaticTileSource, type TileSource } from '../../src/TileSource';
 import { ZoomData } from '../../src/ZoomData';
 import type { RGB, Reference, View } from './harness';
@@ -23,6 +24,8 @@ export interface Driver {
   /** Render the view with whatever is cached, without waiting */
   renderNow(view: View): Uint8Array;
   setColorRange(min: number, max: number): void;
+  /** Value at an image position from the tiles in memory */
+  sampleAt(x: number, y: number): Sample | null;
   /** Number of tile fetches so far */
   tileFetches(): number;
   /** Lose the WebGL context and wait until it is restored */
@@ -119,6 +122,7 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
     setColorRange(min, max) {
       viewer.setColorRange(min, max);
     },
+    sampleAt: (x, y) => viewer.sampleAt(x, y),
     tileFetches: () => tileFetches,
     async loseContext() {
       const gl = canvas.getContext('webgl2')!;

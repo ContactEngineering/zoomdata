@@ -1,5 +1,6 @@
 import type { ZoomConfiguration } from './ZoomConfiguration';
 import type { PixelRect, TileAddress } from './PyramidGeometry';
+import { sampleAt, type Sample } from './sampling';
 import { Tile } from './Tile';
 import { TileCache } from './TileCache';
 import {
@@ -245,6 +246,19 @@ export class TiledImage {
    */
   getCachedTile(level: number, row: number, col: number): Tile | undefined {
     return this.tileCache.get(TileCache.makeKey(level, row, col));
+  }
+
+  /**
+   * Value at an image position from the finest level in memory; does not
+   * fetch tiles or change their recency in the cache
+   */
+  sampleAt(imageX: number, imageY: number): Sample | null {
+    return sampleAt(
+      this.config.geometry,
+      (level, col, row) => this.tileCache.peek(TileCache.makeKey(level, row, col)),
+      imageX,
+      imageY,
+    );
   }
 
   /**

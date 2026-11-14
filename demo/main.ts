@@ -75,8 +75,6 @@ function updateCrosshairInfo(imageX: number, imageY: number, ppmW: number, ppmH:
 // Main initialization
 async function init(): Promise<void> {
   // Create ZoomData instance
-  // Note: NetCDF data is pre-normalized to [0, 1] range
-  // The dzdata.json ColorbarRange is for display labels only
   const zoomData = new ZoomData({
     source: new StaticTileSource(DATA_URL),
     colorPalette: currentPalette,
@@ -98,6 +96,25 @@ async function init(): Promise<void> {
       scalebar.update(level);
     }
   };
+
+  // Show the value under the cursor from the tiles in memory
+  const zoomCanvas = document.getElementById('zoomCanvas') as HTMLCanvasElement;
+  const hoverInfo = document.getElementById('hoverInfo');
+  zoomCanvas.addEventListener('mousemove', (e) => {
+    if (!hoverInfo) return;
+    const rect = zoomCanvas.getBoundingClientRect();
+    const p = zoomData.screenToImage(e.clientX - rect.left, e.clientY - rect.top);
+    const s = p && zoomData.sampleAt(p.x, p.y);
+    if (!s) {
+      hoverInfo.textContent = '—';
+    } else {
+      const value = Number.isNaN(s.value) ? 'no data' : s.value.toPrecision(6);
+      hoverInfo.textContent = `${value}  (level ${s.level}, ${s.stride}×${s.stride} px)`;
+    }
+  });
+  zoomCanvas.addEventListener('mouseleave', () => {
+    if (hoverInfo) hoverInfo.textContent = '—';
+  });
 
   // Set up crosshair change handler  updates the coordinate readout
   zoomData.onCrosshairChange = (imageX, imageY) => {
