@@ -162,11 +162,6 @@ export class WebGLRenderer {
     canvas.addEventListener('webglcontextrestored', this.handleRestored);
   }
 
-  /** Whether the context is currently lost */
-  get isContextLost(): boolean {
-    return this.lost;
-  }
-
   private initResources(): void {
     const gl = this.gl;
     this.program = this.createProgram(VERTEX_SHADER, FRAGMENT_SHADER);
@@ -285,10 +280,6 @@ export class WebGLRenderer {
   setPalette(palette: number[]): void {
     this.palette = palette;
     if (!this.lost) this.uploadPalette();
-  }
-
-  setNoDataColor(color: number): void {
-    this.noData = unpackColor(color);
   }
 
   /**

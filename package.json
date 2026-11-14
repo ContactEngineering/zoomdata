@@ -25,7 +25,6 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "serve-data": "python cors_server.py",
     "test": "vitest --project unit",
     "test:render": "vitest run --project render",
     "test:coverage": "vitest run --coverage"

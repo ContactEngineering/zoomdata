@@ -4,7 +4,6 @@ node_modules
 package-lock.json
 venv
 docs
-examples
 *.nc
 test/fixtures
 test/render/__output__

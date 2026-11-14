@@ -43,13 +43,6 @@ export interface DZIMetadata {
   };
 }
 
-/** Coordinates for a tile in the zoom pyramid */
-export interface TileCoordinate {
-  zoomLevel: number;
-  row: number;
-  column: number;
-}
-
 /** Options for initializing ZoomData */
 export interface ZoomDataOptions {
   /** Where the descriptor and tiles come from; takes precedence over rootUrl */
@@ -94,14 +87,6 @@ export enum TileState {
   Ready = 'ready',
   /** Tile fetch failed */
   Error = 'error',
-}
-
-/** Viewport bounds in data coordinates */
-export interface ViewportBounds {
-  xMin: number;
-  xMax: number;
-  yMin: number;
-  yMax: number;
 }
 
 /** Callback for render completion */

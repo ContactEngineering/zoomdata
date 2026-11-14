@@ -20,7 +20,7 @@ export type { DefaultControllerOptions } from './DefaultController';
 
 // Supporting classes (for advanced usage)
 export { Colorbar } from './Colorbar';
-export type { ColorbarOptions, ColorbarOrientation } from './Colorbar';
+export type { ColorbarOptions } from './Colorbar';
 export { Tile } from './Tile';
 export { TileCache } from './TileCache';
 export type { TileCacheOptions } from './TileCache';
@@ -38,14 +38,7 @@ export { WebGLRenderer, supportsWebGL2 } from './WebGLRenderer';
 export type { ViewTransform } from './WebGLRenderer';
 
 // Types
-export type {
-  DZIMetadata,
-  ImageSize,
-  RenderCallback,
-  TileCoordinate,
-  ViewportBounds,
-  ZoomDataOptions,
-} from './types';
+export type { DZIMetadata, ImageSize, RenderCallback, ZoomDataOptions } from './types';
 
 export { TileState } from './types';
 

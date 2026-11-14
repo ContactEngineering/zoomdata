@@ -1,9 +1,7 @@
 /**
- * Colorbar renders a labeled color scale into an HTML canvas element.
- * Supports vertical and horizontal orientations with automatic tick generation.
+ * Colorbar renders a labeled vertical color scale into an HTML canvas
+ * element, with automatic tick generation.
  */
-
-export type ColorbarOrientation = 'vertical' | 'horizontal';
 
 export interface ColorbarOptions {
   canvas: HTMLCanvasElement;
