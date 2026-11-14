@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { grayscale, inferno, magma, Palettes, plasma, viridis } from './palettes';
+import { grayscale, inferno, magma, Palettes, plasma, viridis } from './palettes.js';
 
 /** RGBA of a palette entry (0xAABBGGRR) */
 function rgba(color: number): [number, number, number, number] {

@@ -33,6 +33,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Build the package
+        run: npm pack --dry-run
+
   test:
     runs-on: ubuntu-latest
     strategy:

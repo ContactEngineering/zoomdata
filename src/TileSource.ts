@@ -1,4 +1,4 @@
-import type { DZIMetadata } from './types';
+import type { DZIMetadata } from './types.js';
 
 /**
  * Where a pyramid's descriptor and tiles come from. The renderer addresses

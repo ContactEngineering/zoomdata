@@ -1,16 +1,16 @@
-import type { ZoomConfiguration } from './ZoomConfiguration';
-import type { PixelRect, TileAddress } from './PyramidGeometry';
-import { sampleAt, type Sample } from './sampling';
-import { Tile } from './Tile';
-import { TileCache } from './TileCache';
-import { TileLoader, type TileLoaderOptions, type TileRequest } from './TileLoader';
+import type { ZoomConfiguration } from './ZoomConfiguration.js';
+import type { PixelRect, TileAddress } from './PyramidGeometry.js';
+import { sampleAt, type Sample } from './sampling.js';
+import { Tile } from './Tile.js';
+import { TileCache } from './TileCache.js';
+import { TileLoader, type TileLoaderOptions, type TileRequest } from './TileLoader.js';
 import {
   WebGLRenderer,
   type RendererColors,
   type TileTexture,
   type ViewTransform,
-} from './WebGLRenderer';
-import type { RenderCallback } from './types';
+} from './WebGLRenderer.js';
+import type { RenderCallback } from './types.js';
 
 /**
  * Manages rendering of a tiled zoomable image using WebGL.

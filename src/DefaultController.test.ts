@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DefaultController } from './DefaultController';
-import type { View, ZoomEngine } from './ZoomEngine';
+import { DefaultController } from './DefaultController.js';
+import type { View, ZoomEngine } from './ZoomEngine.js';
 
 /** Engine stand-in: a 400 x 300 canvas showing a 1000 x 500 image */
 function fakeEngine() {

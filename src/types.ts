@@ -1,8 +1,8 @@
 /**
  * Shared type definitions for the zoomdata library
  */
-import type { TileLoaderOptions } from './TileLoader';
-import type { TileSource } from './TileSource';
+import type { TileLoaderOptions } from './TileLoader.js';
+import type { TileSource } from './TileSource.js';
 
 /** Size dimensions for images */
 export interface ImageSize {

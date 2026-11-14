@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Tile } from './Tile';
-import { TileLoader, type TileRequest } from './TileLoader';
-import type { TileSource } from './TileSource';
-import { TileState } from './types';
+import { Tile } from './Tile.js';
+import { TileLoader, type TileRequest } from './TileLoader.js';
+import type { TileSource } from './TileSource.js';
+import { TileState } from './types.js';
 
 const b = readFileSync(resolve(__dirname, '../test/fixtures/decoder/offset64.nc'));
 const TILE = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;

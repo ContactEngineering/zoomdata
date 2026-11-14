@@ -7,7 +7,7 @@
  * shader, so changing either does not touch the tile textures. NaN shows
  * the no-data colour.
  */
-import type { PixelRect } from './PyramidGeometry';
+import type { PixelRect } from './PyramidGeometry.js';
 
 const VERTEX_SHADER = `#version 300 es
   in vec2 a_unit;

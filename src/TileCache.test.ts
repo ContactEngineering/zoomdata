@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { TileCache, type TileCacheOptions } from './TileCache';
-import type { Tile } from './Tile';
+import { TileCache, type TileCacheOptions } from './TileCache.js';
+import type { Tile } from './Tile.js';
 
 function fakeTile(bytes = 1): Tile {
   return { byteSize: () => bytes } as Tile;

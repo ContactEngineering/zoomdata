@@ -1,4 +1,4 @@
-import type { ImageSize } from './types';
+import type { ImageSize } from './types.js';
 
 /** Half-open rectangle [x0, x1) x [y0, y1) in pixels of some level */
 export interface PixelRect {

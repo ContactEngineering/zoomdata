@@ -1,5 +1,5 @@
-import { LineScanRenderer, type LineScanData } from './LineScanRenderer';
-import type { ZoomEngine } from './ZoomEngine';
+import { LineScanRenderer, type LineScanData } from './LineScanRenderer.js';
+import type { ZoomEngine } from './ZoomEngine.js';
 
 /** Values along a horizontal or vertical line through the image */
 export interface Profile {

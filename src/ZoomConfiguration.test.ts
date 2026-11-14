@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { StaticTileSource, type TileSource } from './TileSource';
-import { ZoomConfiguration } from './ZoomConfiguration';
-import type { DZIMetadata } from './types';
+import { StaticTileSource, type TileSource } from './TileSource.js';
+import { ZoomConfiguration } from './ZoomConfiguration.js';
+import type { DZIMetadata } from './types.js';
 
 const VALID_METADATA: DZIMetadata = {
   Image: {

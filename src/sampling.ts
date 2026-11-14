@@ -1,5 +1,5 @@
-import type { PyramidGeometry } from './PyramidGeometry';
-import type { Tile } from './Tile';
+import type { PyramidGeometry } from './PyramidGeometry.js';
+import type { Tile } from './Tile.js';
 
 /** A value read from the pyramid */
 export interface Sample {

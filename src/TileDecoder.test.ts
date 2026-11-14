@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { decodeTile, TileDecodeError } from './TileDecoder';
+import { decodeTile, TileDecodeError } from './TileDecoder.js';
 
 const FIXTURES = resolve(__dirname, '../test/fixtures');
 

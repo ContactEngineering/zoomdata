@@ -1,10 +1,10 @@
-import { Palettes } from './palettes';
-import type { TileAddress } from './PyramidGeometry';
-import type { Sample } from './sampling';
-import { TiledImage } from './TiledImage';
-import type { TileLoaderOptions } from './TileLoader';
-import type { TileSource } from './TileSource';
-import { ZoomConfiguration } from './ZoomConfiguration';
+import { Palettes } from './palettes.js';
+import type { TileAddress } from './PyramidGeometry.js';
+import type { Sample } from './sampling.js';
+import { TiledImage } from './TiledImage.js';
+import type { TileLoaderOptions } from './TileLoader.js';
+import type { TileSource } from './TileSource.js';
+import { ZoomConfiguration } from './ZoomConfiguration.js';
 
 /**
  * View transform in CSS pixels of the canvas: `screen = k * image + (x, y)`,

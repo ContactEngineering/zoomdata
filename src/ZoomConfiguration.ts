@@ -1,7 +1,7 @@
-import { parseDescriptor, type PyramidDescriptor } from './PyramidDescriptor';
-import { PyramidGeometry } from './PyramidGeometry';
-import { toTileSource, type TileSource } from './TileSource';
-import type { ColorbarRange, ImageSize } from './types';
+import { parseDescriptor, type PyramidDescriptor } from './PyramidDescriptor.js';
+import { PyramidGeometry } from './PyramidGeometry.js';
+import { toTileSource, type TileSource } from './TileSource.js';
+import type { ColorbarRange, ImageSize } from './types.js';
 
 /**
  * Represents the global zoom configuration loaded from the pyramid

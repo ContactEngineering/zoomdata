@@ -1,4 +1,4 @@
-import type { Tile } from './Tile';
+import type { Tile } from './Tile.js';
 
 export interface TileCacheOptions {
   /** Memory budget in bytes (default: 256 MiB) */

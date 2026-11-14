@@ -1,42 +1,55 @@
 {
   "name": "zoomdata",
   "version": "0.1.0",
-  "description": "Zoomable data maps for scientific visualization",
+  "description": "Zoomable height maps and other two-dimensional scientific data in the browser, with exact values, drawn from NetCDF tile pyramids",
+  "keywords": [
+    "visualization",
+    "deep-zoom",
+    "scientific-data",
+    "netcdf",
+    "webgl",
+    "height-map",
+    "topography"
+  ],
+  "homepage": "https://github.com/ContactEngineering/zoomdata#readme",
+  "bugs": {
+    "url": "https://github.com/ContactEngineering/zoomdata/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ContactEngineering/zoomdata.git"
+  },
+  "license": "MIT",
+  "author": "contact.engineering",
   "type": "module",
-  "main": "dist/zoomdata.js",
-  "module": "dist/zoomdata.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/zoomdata.umd.cjs",
+  "module": "./dist/zoomdata.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/zoomdata.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/zoomdata.umd.cjs"
     }
   },
   "files": [
     "dist",
-    "src"
+    "CHANGELOG.md"
   ],
+  "sideEffects": false,
   "scripts": {
     "dev": "vite --config vite.demo.config.ts",
     "demo:data": "python demo/make_demo_data.py",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
+    "build": "vite build && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && vue-tsc --noEmit -p demo/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest --project unit",
     "test:render": "vitest run --project render",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "prepack": "npm run build"
   },
-  "keywords": [
-    "visualization",
-    "deep-zoom",
-    "scientific-data",
-    "netcdf"
-  ],
-  "author": "",
-  "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.5",

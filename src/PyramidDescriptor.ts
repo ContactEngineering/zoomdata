@@ -1,5 +1,5 @@
-import type { ValueEncoding } from './TileDecoder';
-import type { ColorbarRange, DZIMetadata, ImageSize } from './types';
+import type { ValueEncoding } from './TileDecoder.js';
+import type { ColorbarRange, DZIMetadata, ImageSize } from './types.js';
 
 /** Tile format versions this reader understands */
 export const SUPPORTED_FORMAT_VERSIONS = [1, 2] as const;
