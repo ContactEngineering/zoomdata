@@ -3,13 +3,14 @@ import type { PixelRect, TileAddress } from './PyramidGeometry';
 import { sampleAt, type Sample } from './sampling';
 import { Tile } from './Tile';
 import { TileCache } from './TileCache';
+import { TileLoader, type TileLoaderOptions, type TileRequest } from './TileLoader';
 import {
   WebGLRenderer,
   type RendererColors,
   type TileTexture,
   type ViewTransform,
 } from './WebGLRenderer';
-import { TileState, type RenderCallback } from './types';
+import type { RenderCallback } from './types';
 
 /**
  * Manages rendering of a tiled zoomable image using WebGL.
@@ -19,6 +20,7 @@ export class TiledImage {
   private readonly config: ZoomConfiguration;
   private readonly tileCache: TileCache;
 
+  private readonly loader: TileLoader;
   private renderer: WebGLRenderer | null = null;
   private textureCache: Map<string, TileTexture> = new Map();
   private colorRange: [number, number] = [0, 1];
@@ -32,8 +34,9 @@ export class TiledImage {
    * Create a new TiledImage
    * @param config - The zoom configuration
    * @param cacheBytes - Memory budget for tiles, CPU and GPU (default: 256 MiB)
+   * @param loaderOptions - Concurrency and retries of tile requests
    */
-  constructor(config: ZoomConfiguration, cacheBytes?: number) {
+  constructor(config: ZoomConfiguration, cacheBytes?: number, loaderOptions?: TileLoaderOptions) {
     this.config = config;
     const baseLevel = config.geometry.baseLevel;
     this.tileCache = new TileCache({
@@ -48,6 +51,11 @@ export class TiledImage {
     this.tileCache.onEvict = (key, tile) => {
       this.deleteTexture(key);
       tile.clearCache();
+    };
+    this.loader = new TileLoader(config.source, loaderOptions);
+    this.loader.onSettled = (request) => {
+      this.tileCache.updateSize(request.key);
+      this.onTilesLoaded?.();
     };
   }
 
@@ -118,31 +126,29 @@ export class TiledImage {
   }
 
   /**
-   * Get or fetch a tile, starting the fetch if needed
+   * Get a tile from the cache, creating it (pending) if needed
    */
-  private getOrFetchTile({ level, col, row }: TileAddress): Tile {
+  private getOrCreateTile({ level, col, row }: TileAddress): Tile {
     const cacheKey = TileCache.makeKey(level, row, col);
     let tile = this.tileCache.get(cacheKey);
-
     if (!tile) {
-      const source = this.config.source;
       const extent = this.config.geometry.tileExtent(level, col, row);
-      tile = new Tile(() => source.tileUrl(level, col, row), {
+      tile = new Tile({
         expectedShape: { width: extent.x1 - extent.x0, height: extent.y1 - extent.y0 },
         encoding: this.config.descriptor.encoding,
       });
       this.tileCache.set(cacheKey, tile);
     }
-
-    if (tile.getState() === TileState.Pending) {
-      const done = () => {
-        this.tileCache.updateSize(cacheKey);
-        this.onTilesLoaded?.();
-      };
-      tile.fetch().then(done, done);
-    }
-
     return tile;
+  }
+
+  private request(address: TileAddress, priority: number): TileRequest {
+    return {
+      key: TileCache.makeKey(address.level, address.row, address.col),
+      ...address,
+      priority,
+      tile: this.getOrCreateTile(address),
+    };
   }
 
   /**
@@ -215,17 +221,38 @@ export class TiledImage {
       x1: (canvas.width - tx) / k,
       y1: (canvas.height - ty) / k,
     };
-    const addresses = this.config.geometry.tilesInRect(level, visible);
+    const geometry = this.config.geometry;
+    const addresses = geometry.tilesInRect(level, visible);
     this.viewTiles = new Set(addresses.map((a) => TileCache.makeKey(a.level, a.row, a.col)));
+
+    // The base level loads first, then visible tiles from the centre out
+    const requests: TileRequest[] = [];
+    const base = geometry.baseLevel;
+    if (level > base) {
+      requests.push(this.request({ level: base, col: 0, row: 0 }, -1));
+    }
+    const cx = (visible.x0 + visible.x1) / 2;
+    const cy = (visible.y0 + visible.y1) / 2;
     for (const address of addresses) {
-      const tile = this.getOrFetchTile(address);
       const clip = this.coreInImage(address);
-      if (!this.drawTile(tile, address, clip)) {
+      const dx = (clip.x0 + clip.x1) / 2 - cx;
+      const dy = (clip.y0 + clip.y1) / 2 - cy;
+      const request = this.request(address, dx * dx + dy * dy);
+      requests.push(request);
+      if (!this.drawTile(request.tile, address, clip)) {
         this.drawFallback(address, clip);
       }
     }
+    this.loader.update(requests);
     // Tiles that left the view are no longer pinned
     this.tileCache.trim();
+  }
+
+  /**
+   * Whether tiles are queued or loading
+   */
+  isLoading(): boolean {
+    return !this.loader.idle;
   }
 
   /**
@@ -298,6 +325,7 @@ export class TiledImage {
    * Clean up resources
    */
   dispose(): void {
+    this.loader.dispose();
     this.clearCache();
     this.renderer?.dispose();
     this.renderer = null;

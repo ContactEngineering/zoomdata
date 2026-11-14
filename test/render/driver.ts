@@ -19,8 +19,11 @@ export const NO_DATA: RGB = [255, 0, 255];
 
 export interface Driver {
   canvas: HTMLCanvasElement;
-  /** Render the view once all tiles it requests are loaded */
-  render(view: View): Promise<Uint8Array>;
+  /**
+   * Render the view once all tiles it requests are loaded, or once `until`
+   * returns true
+   */
+  render(view: View, until?: () => boolean): Promise<Uint8Array>;
   /** Render the view with whatever is cached, without waiting */
   renderNow(view: View): Uint8Array;
   setColorRange(min: number, max: number): void;
@@ -32,6 +35,8 @@ export interface Driver {
   tileFetches(): number;
   /** Lose the WebGL context and wait until it is restored */
   loseContext(): Promise<void>;
+  /** Answer fetches of tiles whose URL matches with an HTTP error; returns an undo function */
+  rejectTiles(pattern: RegExp, status: number): () => void;
   /** Delay fetches of tiles whose URL matches; returns a release function */
   blockTiles(pattern: RegExp): () => void;
   dispose(): void;
@@ -44,12 +49,13 @@ interface ZoomDataInternals {
   yPos: number;
   render(): void;
   tiledImage: {
-    tileCache: { values(): IterableIterator<{ getState(): string }> };
+    isLoading(): boolean;
     getCacheStats(): { tileCount: number; textureCount: number; bytes: number };
   };
 }
 
 const blocked: { pattern: RegExp; release: Promise<void> }[] = [];
+const rejected: { pattern: RegExp; status: number }[] = [];
 let tileFetches = 0;
 const originalFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -57,6 +63,9 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   if (url.includes('/dzdata_files/')) tileFetches++;
   for (const b of blocked) {
     if (b.pattern.test(url)) await b.release;
+  }
+  for (const r of rejected) {
+    if (r.pattern.test(url)) return new Response(null, { status: r.status });
   }
   return originalFetch(input, init);
 };
@@ -107,15 +116,14 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
     internals.yPos = view.ty;
   };
 
-  const loading = () =>
-    [...internals.tiledImage.tileCache.values()].some((t) => t.getState() === 'loading');
+  const loading = () => internals.tiledImage.isLoading();
 
   return {
     canvas,
-    async render(view) {
+    async render(view, until) {
       setView(view);
       internals.render();
-      for (let i = 0; i < 200 && loading(); i++) {
+      for (let i = 0; i < 200 && loading() && !until?.(); i++) {
         await new Promise((r) => setTimeout(r, 10));
       }
       internals.render();
@@ -147,6 +155,11 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
       );
       ext.restoreContext();
       await restored;
+    },
+    rejectTiles(pattern, status) {
+      const entry = { pattern, status };
+      rejected.push(entry);
+      return () => void rejected.splice(rejected.indexOf(entry), 1);
     },
     blockTiles(pattern) {
       let release!: () => void;

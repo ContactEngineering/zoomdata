@@ -118,6 +118,50 @@ describe('tile source', () => {
   });
 });
 
+describe('tile loader', () => {
+  test('recovers from expired tile URLs', async () => {
+    // URLs carry a token; the server rejects all but the current one with 403
+    const ref = await loadReference('pattern-ov1');
+    const inner = new StaticTileSource(fixtureUrl('pattern-ov1'));
+    let token = 0;
+    const invalidated: string[] = [];
+    const source: TileSource = {
+      descriptor: () => inner.descriptor(),
+      async tileUrl(level, col, row) {
+        return `${await inner.tileUrl(level, col, row)}?token=${token}`;
+      },
+      invalidate(level, col, row) {
+        invalidated.push(`${level}/${col}_${row}`);
+        token = 1;
+      },
+    };
+    const { driver } = await setup('pattern-ov1', { source });
+    const restore = driver.rejectTiles(/token=0/, 403);
+    try {
+      const view = { k: 1, tx: 5, ty: 3 };
+      await check('expired URLs', ref, await driver.render(view), view);
+      expect(invalidated.length).toBeGreaterThan(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('draws a coarser level while finer tiles load', async () => {
+    // Nothing was loaded before; the base level (5) loads first
+    const { ref, driver } = await setup('pattern-ov2');
+    const view = { k: 1, tx: 5, ty: 3 };
+    const release = driver.blockTiles(new RegExp(`/dzdata_files/${ref.maxLevel}/`));
+    try {
+      await driver.render(view, () => driver.sampleAt(0, 0) !== null);
+      await check('base level first', ref, driver.renderNow(view), view, {
+        level: ref.maxLevel - 3,
+      });
+    } finally {
+      release();
+    }
+  });
+});
+
 describe('colour range', () => {
   test('maps a narrower range and clamps outside it', async () => {
     const { ref, driver } = await setup('pattern-ov1');
@@ -170,6 +214,10 @@ describe('tile cache', () => {
         expect(driver.cacheStats().bytes).toBeLessThanOrEqual(budget);
       }
       expect(deleted).toHaveBeenCalled();
+      // The last view shows the top left; elsewhere the base level (5) is
+      // still in memory, since it is pinned
+      expect(driver.sampleAt(10, 10)!.level).toBe(8);
+      expect(driver.sampleAt(149, 99)!.level).toBe(5);
     } finally {
       deleted.mockRestore();
     }

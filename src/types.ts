@@ -1,6 +1,7 @@
 /**
  * Shared type definitions for the zoomdata library
  */
+import type { TileLoaderOptions } from './TileLoader';
 import type { TileSource } from './TileSource';
 
 /** Size dimensions for images */
@@ -67,6 +68,8 @@ export interface ZoomDataOptions {
   noDataColor?: number;
   /** Colour behind the image, 32-bit ABGR (default: light grey) */
   backgroundColor?: number;
+  /** Concurrency and retries of tile requests */
+  loader?: TileLoaderOptions;
   /** Memory budget for tiles in bytes, CPU and GPU (default: 256 MiB) */
   cacheBytes?: number;
   /** Enable debug rendering (tile borders) */

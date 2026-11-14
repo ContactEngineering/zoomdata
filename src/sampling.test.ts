@@ -4,9 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { parseDescriptor } from './PyramidDescriptor';
 import { PyramidGeometry } from './PyramidGeometry';
 import { sampleAt } from './sampling';
-import type { Tile } from './Tile';
-import { Tile as TileClass } from './Tile';
-import { decodeTile } from './TileDecoder';
+import { Tile } from './Tile';
 
 const FIXTURES = resolve(__dirname, '../test/fixtures');
 
@@ -24,15 +22,8 @@ function loadPyramid(fixture: string) {
         const b = readFileSync(
           resolve(FIXTURES, fixture, `dzdata_files/${level}/${col}_${row}.nc`),
         );
-        const decoded = decodeTile(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
-        // A ready tile without going through fetch
-        const tile = Object.assign(Object.create(TileClass.prototype), {
-          data: decoded.values,
-          width: decoded.width,
-          height: decoded.height,
-          encoding: decoded.encoding ?? descriptor.encoding,
-          state: 'ready',
-        }) as Tile;
+        const tile = new Tile({ encoding: descriptor.encoding });
+        tile.load(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer);
         tiles.set(`${level}/${col}_${row}`, tile);
       }
     }
@@ -129,9 +120,7 @@ describe('sampleAt', () => {
 
   it('skips tiles that are not ready', () => {
     const lookup = (level: number, col: number, row: number) =>
-      level === 8
-        ? (Object.create(TileClass.prototype) as Tile)
-        : tiles.get(`${level}/${col}_${row}`);
+      level === 8 ? new Tile() : tiles.get(`${level}/${col}_${row}`);
     expect(sampleAt(geometry, lookup, 10, 10)!.level).toBe(7);
   });
 

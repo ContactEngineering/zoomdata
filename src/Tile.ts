@@ -9,33 +9,29 @@ export interface TileOptions {
 }
 
 /**
- * Represents a single tile from a deep zoom image stack.
- * Stores the tile's values as float32 for GPU-based color mapping.
+ * A single tile of the pyramid: its loading state and, once loaded, its
+ * values as float32 for GPU-based color mapping. Tiles are fetched by the
+ * TileLoader.
  */
 export class Tile {
-  private readonly url: string | (() => Promise<string | null>);
   private readonly options: TileOptions;
   private data: Float32Array | null = null;
   private encoding: ValueEncoding = { scaleFactor: 1, addOffset: 0 };
   private state: TileState = TileState.Pending;
   private error: Error | null = null;
-  private fetchPromise: Promise<void> | null = null;
   xCoords: Float64Array | null = null;
   yCoords: Float64Array | null = null;
 
-  /** Width of the tile in pixels (set after fetch) */
+  /** Width of the tile in pixels (set after load) */
   width: number = 0;
-  /** Height of the tile in pixels (set after fetch) */
+  /** Height of the tile in pixels (set after load) */
   height: number = 0;
 
   /**
    * Create a new Tile
-   * @param url - URL to fetch the NetCDF tile data from, or a function that
-   *   resolves it when the tile is fetched (null if the tile does not exist)
    * @param options - Expected shape and default encoding
    */
-  constructor(url: string | (() => Promise<string | null>), options: TileOptions = {}) {
-    this.url = url;
+  constructor(options: TileOptions = {}) {
     this.options = options;
   }
 
@@ -44,6 +40,14 @@ export class Tile {
    */
   getState(): TileState {
     return this.state;
+  }
+
+  /**
+   * Set the loading state (used by the loader)
+   */
+  setState(state: TileState.Pending | TileState.Loading): void {
+    this.state = state;
+    this.error = null;
   }
 
   /**
@@ -58,6 +62,35 @@ export class Tile {
    */
   isReady(): boolean {
     return this.state === TileState.Ready && this.data !== null;
+  }
+
+  /**
+   * Decode the contents of the tile file; marks the tile as failed and
+   * throws if they are invalid
+   */
+  load(buffer: ArrayBuffer): void {
+    try {
+      const decoded = decodeTile(buffer, this.options.expectedShape);
+      this.width = decoded.width;
+      this.height = decoded.height;
+      this.data = decoded.values;
+      this.encoding = decoded.encoding ?? this.options.encoding ?? { scaleFactor: 1, addOffset: 0 };
+      this.xCoords = decoded.x;
+      this.yCoords = decoded.y;
+      this.state = TileState.Ready;
+      this.error = null;
+    } catch (err) {
+      this.fail(err instanceof Error ? err : new Error(String(err)));
+      throw err;
+    }
+  }
+
+  /**
+   * Mark the tile as failed
+   */
+  fail(error: Error): void {
+    this.state = TileState.Error;
+    this.error = error;
   }
 
   /**
@@ -105,66 +138,12 @@ export class Tile {
   }
 
   /**
-   * Fetch the tile data from the server
-   * @returns Promise that resolves when data is loaded
-   */
-  async fetch(): Promise<void> {
-    // Return existing promise if already fetching
-    if (this.fetchPromise) {
-      return this.fetchPromise;
-    }
-
-    // Return immediately if already loaded
-    if (this.data && this.state === TileState.Ready) {
-      return;
-    }
-
-    this.state = TileState.Loading;
-    this.error = null;
-
-    this.fetchPromise = this.doFetch();
-    return this.fetchPromise;
-  }
-
-  /**
-   * Internal fetch implementation
-   */
-  private async doFetch(): Promise<void> {
-    try {
-      const url = typeof this.url === 'string' ? this.url : await this.url();
-      if (url === null) {
-        throw new Error('Tile not available');
-      }
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const decoded = decodeTile(await response.arrayBuffer(), this.options.expectedShape);
-      this.width = decoded.width;
-      this.height = decoded.height;
-      this.data = decoded.values;
-      this.encoding = decoded.encoding ?? this.options.encoding ?? { scaleFactor: 1, addOffset: 0 };
-      this.xCoords = decoded.x;
-      this.yCoords = decoded.y;
-      this.state = TileState.Ready;
-    } catch (err) {
-      this.state = TileState.Error;
-      this.error = err instanceof Error ? err : new Error(String(err));
-      this.fetchPromise = null;
-      throw this.error;
-    }
-  }
-
-  /**
    * Clear the cached data to free memory
    */
   clearCache(): void {
     this.data = null;
     this.xCoords = null;
     this.yCoords = null;
-    this.fetchPromise = null;
     this.state = TileState.Pending;
   }
 }

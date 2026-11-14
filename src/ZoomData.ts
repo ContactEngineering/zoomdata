@@ -2,6 +2,7 @@ import { Palettes } from './palettes';
 import { ZoomConfiguration } from './ZoomConfiguration';
 import { TiledImage } from './TiledImage';
 import type { Sample } from './sampling';
+import type { TileLoaderOptions } from './TileLoader';
 import { toTileSource, type TileSource } from './TileSource';
 import type { ZoomDataOptions } from './types';
 import { LineScanRenderer, LineScanData } from './LineScanRenderer';
@@ -46,6 +47,7 @@ export class ZoomData {
   private maxValue: number | undefined;
   private readonly noDataColor: number | undefined;
   private readonly cacheBytes: number | undefined;
+  private readonly loaderOptions: TileLoaderOptions | undefined;
   private readonly backgroundColor: number | undefined;
 
   // Crosshair state (image pixel coordinates, null = not placed)
@@ -89,6 +91,7 @@ export class ZoomData {
     this.maxValue = options.maxValue;
     this.noDataColor = options.noDataColor;
     this.cacheBytes = options.cacheBytes;
+    this.loaderOptions = options.loader;
     this.backgroundColor = options.backgroundColor;
   }
 
@@ -149,7 +152,7 @@ export class ZoomData {
     }
 
     // Create tiled image with WebGL renderer
-    this.tiledImage = new TiledImage(this.config, this.cacheBytes);
+    this.tiledImage = new TiledImage(this.config, this.cacheBytes, this.loaderOptions);
     // The colour range defaults to the range of the data
     const { encoding, colorbarRange } = this.config.descriptor;
     this.minValue ??= colorbarRange?.Minimum ?? encoding.addOffset;
