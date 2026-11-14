@@ -13,6 +13,8 @@ export interface DefaultControllerOptions {
   minFitFraction?: number;
   /** Largest scale in CSS pixels per image pixel (default: 64) */
   maxScale?: number;
+  /** Degrees the map turns or tips per CSS pixel of an orbit drag (default: 0.4) */
+  orbitSpeed?: number;
   /** Enable keyboard input; makes the element focusable (default: true) */
   keyboard?: boolean;
   /** Called on double click / double tap with the image position */
@@ -22,7 +24,8 @@ export interface DefaultControllerOptions {
 /**
  * Default input handling for a ZoomEngine: drag to pan with mouse, pen or
  * one finger; pinch with two fingers; wheel to zoom about the cursor;
- * +/-, arrow keys and 0 (fit) on the keyboard.
+ * drag with the right button, or with Shift, to turn and tilt the map;
+ * +/-, arrow keys and 0 (fit, looking straight down) on the keyboard.
  *
  * It only calls engine.setView(); hosts with their own gesture handling do
  * not need it.
@@ -36,6 +39,7 @@ export class DefaultController {
   // Active pointers in element coordinates (CSS pixels)
   private pointers = new Map<number, { x: number; y: number }>();
   private lastTap: { time: number; x: number; y: number } | null = null;
+  private orbiting = false;
 
   private readonly listeners: [string, EventListener, AddEventListenerOptions?][];
 
@@ -49,6 +53,7 @@ export class DefaultController {
       keyPanFraction: options.keyPanFraction ?? 0.1,
       minFitFraction: options.minFitFraction ?? 0.25,
       maxScale: options.maxScale ?? 64,
+      orbitSpeed: options.orbitSpeed ?? 0.4,
       keyboard: options.keyboard ?? true,
     };
 
@@ -59,6 +64,8 @@ export class DefaultController {
       ['pointercancel', this.handlePointerUp as EventListener],
       ['wheel', this.handleWheel as EventListener, { passive: false }],
       ['dblclick', this.handleDblClick as EventListener],
+      // The right button turns the map instead of opening a menu
+      ['contextmenu', (event: Event) => event.preventDefault()],
     ];
     if (this.options.keyboard) {
       this.listeners.push(['keydown', this.handleKeyDown as EventListener]);
@@ -89,16 +96,25 @@ export class DefaultController {
     const view = this.engine.view;
     const k = this.clampScale(view.k * factor);
     const f = k / view.k;
-    this.engine.setView({ k, x: px - f * (px - view.x), y: py - f * (py - view.y) });
+    this.engine.setView({ ...view, k, x: px - f * (px - view.x), y: py - f * (py - view.y) });
   }
 
   /** Pan by (dx, dy) CSS pixels */
   panBy(dx: number, dy: number): void {
     const view = this.engine.view;
-    this.engine.setView({ k: view.k, x: view.x + dx, y: view.y + dy });
+    this.engine.setView({ ...view, x: view.x + dx, y: view.y + dy });
   }
 
-  /** Fit the image into the canvas */
+  /**
+   * Turn the map by `rotation` degrees and tip it by `tilt` degrees about
+   * the point at the centre of the canvas
+   */
+  orbitBy(rotation: number, tilt: number): void {
+    const view = this.engine.view;
+    this.engine.setView(this.engine.orbitView(view.rotation + rotation, view.tilt + tilt));
+  }
+
+  /** Fit the image into the canvas, looking straight down */
   fit(): void {
     this.engine.setView(this.engine.fitView());
   }
@@ -109,9 +125,11 @@ export class DefaultController {
   }
 
   private readonly handlePointerDown = (event: PointerEvent) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (event.pointerType === 'mouse' && event.button !== 0 && event.button !== 2) return;
     this.element.setPointerCapture?.(event.pointerId);
     this.pointers.set(event.pointerId, this.position(event));
+    // The right button, or Shift with the left, turns and tilts the map
+    this.orbiting = event.pointerType === 'mouse' && (event.button === 2 || event.shiftKey);
     this.element.style.cursor = 'grabbing';
 
     // Double tap on touch screens (dblclick covers mouse)
@@ -138,7 +156,11 @@ export class DefaultController {
 
     if (this.pointers.size === 1) {
       this.pointers.set(event.pointerId, current);
-      this.panBy(current.x - previous.x, current.y - previous.y);
+      const dx = current.x - previous.x;
+      const dy = current.y - previous.y;
+      // Dragging sideways turns the map, dragging up tips it back
+      if (this.orbiting) this.orbitBy(dx * this.options.orbitSpeed, -dy * this.options.orbitSpeed);
+      else this.panBy(dx, dy);
       return;
     }
 
@@ -176,7 +198,8 @@ export class DefaultController {
 
   private doubleClick(x: number, y: number): void {
     if (!this.onDoubleClick) return;
-    const p = this.engine.screenToImage(x, y);
+    // The point of the surface there, in the tilted view
+    const p = this.engine.pick(x, y);
     this.onDoubleClick(p.x, p.y);
   }
 

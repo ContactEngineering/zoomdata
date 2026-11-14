@@ -1,4 +1,5 @@
 import type { ZoomConfiguration } from './ZoomConfiguration.js';
+import { footprint, isPlain, type Camera } from './camera.js';
 import type { PixelRect, TileAddress } from './PyramidGeometry.js';
 import { lengthInMeters, type ReliefOptions } from './relief.js';
 import { sampleAt, type Sample } from './sampling.js';
@@ -25,6 +26,9 @@ export class TiledImage {
   private renderer: WebGLRenderer | null = null;
   private textureCache: Map<string, TileTexture> = new Map();
   private colorRange: [number, number] = [0, 1];
+  private verticalExaggeration = 1;
+  // Unit of the values as the first loaded tile states it
+  private tileUnit: string | null = null;
   // Keys of the tiles the last rendered view shows or helpers asked for
   private viewTiles: Set<string> = new Set();
   // Tiles wanted beyond the view, by owner
@@ -57,6 +61,7 @@ export class TiledImage {
     };
     this.loader = new TileLoader(config.source, loaderOptions);
     this.loader.onSettled = (request) => {
+      this.tileUnit ??= request.tile.unit;
       this.tileCache.updateSize(request.key);
       this.onTilesLoaded?.();
     };
@@ -113,10 +118,11 @@ export class TiledImage {
    * smaller side of the map, which gives a readable relief but no true
    * slopes.
    */
-  private pixelsPerUnit(tile: Tile): { x: number; y: number } {
+  pixelsPerUnit(): { x: number; y: number } {
     const { descriptor, geometry } = this.config;
     const ppm = descriptor.pixelsPerMeter;
-    const meters = lengthInMeters(descriptor.unit ?? tile.unit);
+    // Pyramids without the unit in the descriptor state it in their tiles
+    const meters = lengthInMeters(descriptor.unit ?? this.tileUnit);
     if (ppm && meters !== null) {
       return { x: meters * ppm.Width, y: meters * ppm.Height };
     }
@@ -125,6 +131,27 @@ export class TiledImage {
     const assumed = span > 0 ? (0.1 * Math.min(geometry.width, geometry.height)) / span : 0;
     // Keep the aspect ratio of the pixels if it is known
     return { x: assumed, y: ppm ? (assumed * ppm.Height) / ppm.Width : assumed };
+  }
+
+  /**
+   * Vertical exaggeration of the surface in the tilted view (default: 1)
+   */
+  setVerticalExaggeration(exaggeration: number): void {
+    this.verticalExaggeration = exaggeration;
+  }
+
+  /**
+   * Height of the surface above the reference plane in the tilted view, in
+   * image pixels: z = (h - reference) * scale for a value h. The reference
+   * is the middle of the range of the values; zMin and zMax bound z.
+   */
+  surfaceHeight(): { scale: number; reference: number; zMin: number; zMax: number } {
+    const { colorbarRange, encoding } = this.config.descriptor;
+    const min = colorbarRange?.Minimum ?? encoding.addOffset - encoding.scaleFactor / 2;
+    const max = colorbarRange?.Maximum ?? encoding.addOffset + encoding.scaleFactor / 2;
+    const reference = (min + max) / 2;
+    const scale = this.pixelsPerUnit().x * this.verticalExaggeration;
+    return { scale, reference, zMin: (min - reference) * scale, zMax: (max - reference) * scale };
   }
 
   /**
@@ -200,7 +227,8 @@ export class TiledImage {
     const [min, max] = this.colorRange;
     const width = max - min;
     const stride = geometry.stride(level);
-    const perUnit = this.pixelsPerUnit(tile);
+    const perUnit = this.pixelsPerUnit();
+    const surface = this.surfaceHeight();
     this.renderer.drawTile(texture, {
       stride,
       originX: extent.x0,
@@ -211,6 +239,9 @@ export class TiledImage {
       // Neighbouring texels are `stride` image pixels apart
       slopeX: (scaleFactor * perUnit.x) / stride,
       slopeY: (scaleFactor * perUnit.y) / stride,
+      // z = (h - reference) * scale with h = addOffset + scaleFactor * v
+      heightScale: scaleFactor * surface.scale,
+      heightOffset: (addOffset - surface.reference) * surface.scale,
     });
     return true;
   }
@@ -250,17 +281,20 @@ export class TiledImage {
     if (!this.renderer) {
       throw new Error('TiledImage.render: renderer not initialized');
     }
-    this.renderer.beginFrame(view);
-
-    const { k, tx, ty } = view;
-    const level = this.levelForScale(k);
-    const visible = {
-      x0: -tx / k,
-      y0: -ty / k,
-      x1: (canvas.width - tx) / k,
-      y1: (canvas.height - ty) / k,
-    };
     const geometry = this.config.geometry;
+    const camera: Camera = { rotation: 0, tilt: 0, ...view };
+    const surface = this.surfaceHeight();
+    this.renderer.beginFrame(
+      camera,
+      geometry,
+      Math.hypot(geometry.width, geometry.height) + (surface.zMax - surface.zMin),
+    );
+
+    const level = this.levelForScale(view.k);
+    // In the tilted view, high and low points show away from their position
+    const visible = isPlain(camera)
+      ? footprint(camera, canvas.width, canvas.height)
+      : footprint(camera, canvas.width, canvas.height, surface.zMin, surface.zMax);
     const addresses = geometry.tilesInRect(level, visible);
     // Pin the tiles in view and those helpers asked for before touching the
     // cache, or they could be evicted and refetched

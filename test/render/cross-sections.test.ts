@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { orbit } from '../../src/camera';
 import { CrossSections } from '../../src/CrossSections';
 import { createDriver, type Driver } from './driver';
 import { loadReference, referenceValue } from './harness';
@@ -89,5 +90,48 @@ describe('CrossSections', () => {
     // Clearing releases the request
     sections.clear();
     expect(sections.horizontalProfile()).toBeNull();
+  });
+
+  it('drapes the crosshair lines over the surface in the tilted view', async () => {
+    const ref = await loadReference('pattern-ov1');
+    driver = await createDriver(ref, { verticalExaggeration: 20 });
+    const overlay = canvas(200, 160);
+    // Read back from the CPU, see viewer.test.ts
+    const ctx = overlay.getContext('2d', { willReadFrequently: true })!;
+    const sections = new CrossSections(driver.engine, { overlayCanvas: overlay });
+    cleanup.push(() => sections.dispose());
+    const engine = driver.engine;
+    const view = orbit({ k: 2, tx: -50, ty: -20, rotation: 0, tilt: 0 }, 25, 55, 100, 80);
+    await driver.render(view);
+    sections.place(75.5, 50.5);
+    await driver.render(view);
+
+    const inked = (x: number, y: number) => {
+      const d = ctx.getImageData(Math.round(x) - 1, Math.round(y) - 1, 3, 3).data;
+      return d.some((value, i) => i % 4 === 3 && value > 0);
+    };
+    // The lines pass through the points of the surface along the row and
+    // the column of the crosshair, not through the reference plane
+    let offPlane = 0;
+    for (const [u, v] of [
+      [60.5, 50.5],
+      [90.5, 50.5],
+      [75.5, 40.5],
+      [75.5, 60.5],
+      [75.5, 50.5],
+    ]) {
+      const value = referenceValue(ref, ref.maxLevel, u, v)!;
+      // Profile values belong to the middle of their pixel
+      const onSurface = engine.imageToScreen(Math.floor(u) + 0.5, Math.floor(v) + 0.5, value);
+      expect(inked(onSurface.x, onSurface.y)).toBe(true);
+      const onPlane = engine.imageToScreen(u, v);
+      if (Math.hypot(onPlane.x - onSurface.x, onPlane.y - onSurface.y) > 4) offPlane++;
+    }
+    // The surface is well off the plane at some of them, so this tells
+    expect(offPlane).toBeGreaterThan(1);
+
+    sections.clear();
+    engine.render();
+    expect(ctx.getImageData(0, 0, 200, 160).data.some((value) => value > 0)).toBe(false);
   });
 });

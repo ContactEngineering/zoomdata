@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, useTemplateRef } from 'vue';
-import { Palettes, supportsWebGL2 } from 'zoomdata';
+import { MAX_TILT, Palettes, supportsWebGL2 } from 'zoomdata';
 import ColorBar from './components/ColorBar.vue';
 import HeightMapViewer from './components/HeightMapViewer.vue';
 import { NO_DATA_CSS } from './colors';
@@ -23,7 +23,7 @@ const loaded = ref(false);
 const paletteName = ref<PaletteName>('inferno');
 const autoRange = ref(true);
 const shaded = ref(true);
-// Vertical exaggeration of the relief as a power of two
+// Vertical exaggeration of the surface and its relief as a power of two
 const exaggerationStep = ref(0);
 const exaggeration = computed(() => 2 ** exaggerationStep.value);
 const relief = computed(() => (shaded.value ? { exaggeration: exaggeration.value } : false));
@@ -56,6 +56,10 @@ onMounted(async () => {
   selected.value = datasets.value[0]?.name ?? null;
   loaded.value = true;
 });
+
+function orient(rotation: number, tilt: number): void {
+  viewer.value?.setOrientation(rotation, tilt);
+}
 
 function select(): void {
   info.value = view.value = probe.value = range.value = crosshair.value = error.value = null;
@@ -129,6 +133,7 @@ const probeText = computed(() => {
           :palette="palette"
           :auto-range="autoRange"
           :relief="relief"
+          :vertical-exaggeration="exaggeration"
           @ready="info = $event"
           @error="error = $event.message"
           @view="view = $event"
@@ -137,8 +142,8 @@ const probeText = computed(() => {
           @crosshair="crosshair = $event"
         />
         <p class="hint">
-          Scroll or pinch to zoom · drag to pan · double-click for cross-sections · keys + − ← ↑ → ↓
-          0
+          Scroll or pinch to zoom · drag to pan · right-drag or Shift-drag to turn and tilt ·
+          double-click for cross-sections · keys + − ← ↑ → ↓ 0
         </p>
       </section>
 
@@ -174,21 +179,38 @@ const probeText = computed(() => {
         </div>
 
         <div class="group">
-          <label>Relief</label>
+          <label>Surface</label>
+          <label class="slider">
+            <span>Tilt {{ Math.round(view?.tilt ?? 0) }}°</span>
+            <input
+              type="range"
+              min="0"
+              :max="MAX_TILT"
+              step="1"
+              :value="view?.tilt ?? 0"
+              @input="
+                orient(view?.rotation ?? 0, Number(($event.target as HTMLInputElement).value))
+              "
+            />
+          </label>
+          <label class="slider">
+            <span>Turn {{ Math.round(view?.rotation ?? 0) }}°</span>
+            <input
+              type="range"
+              min="0"
+              max="359"
+              step="1"
+              :value="view?.rotation ?? 0"
+              @input="orient(Number(($event.target as HTMLInputElement).value), view?.tilt ?? 0)"
+            />
+          </label>
+          <label class="slider">
+            <span>Heights × {{ exaggeration }}</span>
+            <input v-model.number="exaggerationStep" type="range" min="-3" max="6" step="1" />
+          </label>
           <label class="check">
             <input v-model="shaded" type="checkbox" />
             Light the map from the top left
-          </label>
-          <label class="slider" :class="{ off: !shaded }">
-            <span>Heights × {{ exaggeration }}</span>
-            <input
-              v-model.number="exaggerationStep"
-              type="range"
-              min="-3"
-              max="4"
-              step="1"
-              :disabled="!shaded"
-            />
           </label>
         </div>
 
@@ -325,8 +347,8 @@ aside {
   font-variant-numeric: tabular-nums;
 }
 
-.slider.off {
-  color: var(--muted);
+.slider span {
+  flex: 0 0 6.5em;
 }
 
 .slider input {

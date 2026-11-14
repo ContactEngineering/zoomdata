@@ -40,6 +40,10 @@ v0.1.0 (not yet released)
 - ENH: Several viewers can share a page, and viewers fit into Vue, React or plain pages
 - ENH: Relief shading lights the map from a chosen direction, with true slopes and optional vertical
   exaggeration, so that fine structure shows; it switches instantly
+- ENH: The map can be turned and tilted and then shows as a surface, in an orthographic view with
+  adjustable vertical exaggeration; zooming works as in the plain view
+- ENH: In the tilted view the pointer reads the point of the surface under it, and cross-section
+  lines follow the surface
 - ENH: Scale bar, colour bar, and a demo application with a generator for its data
 - API: Colour ranges are given in the physical units of the data, and default to its full range
 - API: Overlay and cross-section canvases are passed to the viewer instead of being found by id

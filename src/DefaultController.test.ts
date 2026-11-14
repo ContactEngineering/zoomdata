@@ -1,12 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DefaultController } from './DefaultController.js';
+import { orbit, unproject } from './camera.js';
 import type { View, ZoomEngine } from './ZoomEngine.js';
 
 /** Engine stand-in: a 400 x 300 canvas showing a 1000 x 500 image */
 function fakeEngine() {
   const canvas = document.createElement('canvas');
   document.body.appendChild(canvas);
-  let view: View = { k: 0.4, x: 0, y: 50 };
+  const fit: Required<View> = { k: 0.4, x: 0, y: 50, rotation: 0, tilt: 0 };
+  let view = { ...fit };
+  const camera = () => ({
+    k: view.k,
+    tx: view.x,
+    ty: view.y,
+    rotation: view.rotation,
+    tilt: view.tilt,
+  });
+  const screenToImage = (x: number, y: number) => {
+    const p = unproject(camera(), x, y);
+    return { x: p.u, y: p.v };
+  };
   const engine = {
     canvas,
     size: { width: 400, height: 300 },
@@ -14,13 +27,15 @@ function fakeEngine() {
       return { ...view };
     },
     setView: vi.fn((v: View) => {
-      view = { ...v };
+      view = { rotation: 0, tilt: 0, ...v };
     }),
-    fitView: () => ({ k: 0.4, x: 0, y: 50 }),
-    screenToImage: (x: number, y: number) => ({
-      x: (x - view.x) / view.k,
-      y: (y - view.y) / view.k,
-    }),
+    fitView: () => ({ ...fit }),
+    orbitView: (rotation: number, tilt: number) => {
+      const c = orbit(camera(), rotation, tilt, 200, 150);
+      return { k: c.k, x: c.tx, y: c.ty, rotation: c.rotation, tilt: c.tilt };
+    },
+    screenToImage,
+    pick: (x: number, y: number) => ({ ...screenToImage(x, y), sample: null }),
   };
   return engine;
 }
@@ -28,9 +43,23 @@ function fakeEngine() {
 let engine: ReturnType<typeof fakeEngine>;
 let controller: DefaultController;
 
-function pointer(type: string, id: number, x: number, y: number, pointerType = 'touch') {
+function pointer(
+  type: string,
+  id: number,
+  x: number,
+  y: number,
+  pointerType = 'touch',
+  init: PointerEventInit = {},
+) {
   engine.canvas.dispatchEvent(
-    new PointerEvent(type, { pointerId: id, clientX: x, clientY: y, pointerType, button: 0 }),
+    new PointerEvent(type, {
+      pointerId: id,
+      clientX: x,
+      clientY: y,
+      pointerType,
+      button: 0,
+      ...init,
+    }),
   );
 }
 
@@ -54,10 +83,10 @@ describe('DefaultController', () => {
     pointer('pointerdown', 1, 100, 100, 'mouse');
     pointer('pointermove', 1, 130, 90, 'mouse');
     pointer('pointerup', 1, 130, 90, 'mouse');
-    expect(engine.view).toEqual({ k: 0.4, x: 30, y: 40 });
+    expect(engine.view).toEqual({ k: 0.4, x: 30, y: 40, rotation: 0, tilt: 0 });
     // Moving without a pressed pointer does nothing
     pointer('pointermove', 1, 200, 200, 'mouse');
-    expect(engine.view).toEqual({ k: 0.4, x: 30, y: 40 });
+    expect(engine.view).toEqual({ k: 0.4, x: 30, y: 40, rotation: 0, tilt: 0 });
   });
 
   it('zooms about the cursor with the wheel', () => {
@@ -101,15 +130,15 @@ describe('DefaultController', () => {
       engine.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: k, cancelable: true }));
     expect(engine.canvas.tabIndex).toBe(0);
     key('ArrowRight');
-    expect(engine.view).toEqual({ k: 0.4, x: -40, y: 50 });
+    expect(engine.view).toEqual({ k: 0.4, x: -40, y: 50, rotation: 0, tilt: 0 });
     key('ArrowDown');
-    expect(engine.view).toEqual({ k: 0.4, x: -40, y: 20 });
+    expect(engine.view).toEqual({ k: 0.4, x: -40, y: 20, rotation: 0, tilt: 0 });
     const centre = imageAt(200, 150);
     key('+');
     expect(engine.view.k).toBeCloseTo(0.4 * Math.SQRT2, 12);
     expect(imageAt(200, 150).x).toBeCloseTo(centre.x, 9);
     key('0');
-    expect(engine.view).toEqual({ k: 0.4, x: 0, y: 50 });
+    expect(engine.view).toEqual({ k: 0.4, x: 0, y: 50, rotation: 0, tilt: 0 });
   });
 
   it('reports double clicks and double taps in image coordinates', () => {
@@ -125,6 +154,49 @@ describe('DefaultController', () => {
     pointer('pointerup', 4, 82, 51);
     expect(onDoubleClick).toHaveBeenCalledTimes(2);
     expect(onDoubleClick).toHaveBeenLastCalledWith(205, 2.5);
+  });
+
+  it('turns and tilts the map about the centre of the canvas with the right button', () => {
+    const centre = imageAt(200, 150);
+    pointer('pointerdown', 1, 100, 100, 'mouse', { button: 2 });
+    // 50 px to the right and 100 px up: 0.4 degrees per pixel
+    pointer('pointermove', 1, 150, 0, 'mouse', { button: 2 });
+    pointer('pointerup', 1, 150, 0, 'mouse', { button: 2 });
+    expect(engine.view.rotation).toBeCloseTo(20, 9);
+    expect(engine.view.tilt).toBeCloseTo(40, 9);
+    expect(engine.view.k).toBe(0.4);
+    const after = imageAt(200, 150);
+    expect(after.x).toBeCloseTo(centre.x, 9);
+    expect(after.y).toBeCloseTo(centre.y, 9);
+  });
+
+  it('turns the map with Shift and the left button, and stops at the limits', () => {
+    pointer('pointerdown', 1, 100, 100, 'mouse', { shiftKey: true });
+    pointer('pointermove', 1, 100, -400, 'mouse', { shiftKey: true });
+    expect(engine.view.tilt).toBe(75);
+    pointer('pointermove', 1, 100, 900, 'mouse', { shiftKey: true });
+    expect(engine.view.tilt).toBe(0);
+    pointer('pointerup', 1, 100, 900, 'mouse');
+    // Without Shift the next drag pans again
+    const view = engine.view;
+    pointer('pointerdown', 2, 100, 100, 'mouse');
+    pointer('pointermove', 2, 110, 100, 'mouse');
+    expect(engine.view).toEqual({ ...view, x: view.x + 10 });
+  });
+
+  it('keeps the orientation while panning and zooming, and resets it when fitting', () => {
+    controller.orbitBy(30, 45);
+    controller.panBy(10, 5);
+    controller.zoomAbout(2, 100, 100);
+    expect([engine.view.rotation, engine.view.tilt, engine.view.k]).toEqual([30, 45, 0.8]);
+    controller.fit();
+    expect(engine.view).toEqual({ k: 0.4, x: 0, y: 50, rotation: 0, tilt: 0 });
+  });
+
+  it('does not open the context menu', () => {
+    const event = new MouseEvent('contextmenu', { cancelable: true });
+    engine.canvas.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it('removes its listeners on dispose', () => {

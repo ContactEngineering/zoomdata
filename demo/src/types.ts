@@ -25,6 +25,9 @@ export interface DatasetInfo {
 export interface ViewInfo {
   /** Screen pixels (CSS) per data point */
   scale: number;
+  /** Rotation and tilt of the map in degrees; both 0 in the plain view */
+  rotation: number;
+  tilt: number;
   /** Level drawn and the number of data points per drawn value along one axis */
   level: number;
   stride: number;

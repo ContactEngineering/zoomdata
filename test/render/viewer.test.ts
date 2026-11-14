@@ -172,7 +172,7 @@ describe('ZoomData', () => {
     zoomData.setView({ k: 2, x: 0, y: 0 });
     zoomData.setPosition(-40, 15);
     expect(zoomData.getPosition()).toEqual({ x: -40, y: 15 });
-    expect(zoomData.getView()).toEqual({ k: 2, x: -40, y: 15 });
+    expect(zoomData.getView()).toEqual({ k: 2, x: -40, y: 15, rotation: 0, tilt: 0 });
     expect(zoomData.screenToImage(0, 15)).toEqual({ x: 20, y: 0 });
 
     // 150 x 100 in 200 x 160: the width limits the scale

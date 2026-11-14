@@ -23,6 +23,8 @@ const props = defineProps<{
   autoRange: boolean;
   /** Relief shading, or false for none */
   relief: ReliefOptions | false;
+  /** Vertical exaggeration of the surface in the tilted view */
+  verticalExaggeration: number;
 }>();
 
 const emit = defineEmits<{
@@ -54,8 +56,11 @@ function emitView(): void {
   if (!engine) return;
   const { tileCount, bytes } = engine.cacheStats();
   const level = engine.level;
+  const view = engine.view;
   emit('view', {
-    scale: engine.view.k,
+    scale: view.k,
+    rotation: view.rotation,
+    tilt: view.tilt,
     level,
     stride: engine.config.geometry.stride(level),
     tiles: tileCount,
@@ -135,12 +140,12 @@ function probe(): void {
     emit('probe', null);
     return;
   }
-  const p = engine.screenToImage(pointer.x, pointer.y);
-  // The finest value in memory at that position; never triggers a request
-  const sample = engine.sampleAt(p.x, p.y);
+  // The point of the surface under the pointer and its value, from the
+  // tiles in memory; never triggers a request
+  const { x, y, sample } = engine.pick(pointer.x, pointer.y);
   emit(
     'probe',
-    sample && { x: p.x, y: p.y, value: sample.value, level: sample.level, stride: sample.stride },
+    sample && { x, y, value: sample.value, level: sample.level, stride: sample.stride },
   );
 }
 
@@ -162,6 +167,7 @@ onMounted(async () => {
       colorPalette: props.palette,
       noDataColor: NO_DATA_COLOR,
       relief: props.relief,
+      verticalExaggeration: props.verticalExaggeration,
     });
   } catch (err) {
     emit('error', err instanceof Error ? err : new Error(String(err)));
@@ -245,9 +251,17 @@ watch(
   (relief) => engine?.setRelief(relief),
 );
 
+watch(
+  () => props.verticalExaggeration,
+  (exaggeration) => engine?.setVerticalExaggeration(exaggeration),
+);
+
 defineExpose({
-  /** Show the whole map */
+  /** Show the whole map, looking straight down */
   resetView: () => engine?.setView(engine.fitView()),
+  /** Turn and tilt the map about the centre of the canvas, in degrees */
+  setOrientation: (rotation: number, tilt: number) =>
+    engine?.setView(engine.orbitView(rotation, tilt)),
   clearCrosshair: () => sections?.clear(),
 });
 </script>

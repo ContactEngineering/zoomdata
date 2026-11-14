@@ -64,8 +64,13 @@ Let `W` x `H` be the image size, `T` the tile size and `o` the overlap.
   clipped to the level. Edge tiles are therefore smaller.
 
 The reader computes all of this from the descriptor (`PyramidGeometry`) and
-rejects tiles whose shape does not match. Nothing in it depends on the
-overlap being non-zero; the renderer draws only tile cores.
+rejects tiles whose shape does not match. It works for any overlap,
+including 0, and the plain view draws only tile cores.
+
+An overlap of at least 1 is recommended: relief shading and the tilted view
+use the values just outside a tile's core, to compute slopes at its border
+and to join the surfaces of adjacent tiles. With an overlap of 0 the map
+still shows, with one-sided slopes and small steps at tile borders.
 
 ## Tiles
 

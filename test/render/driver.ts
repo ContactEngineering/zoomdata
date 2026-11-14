@@ -79,6 +79,7 @@ export interface DriverOptions {
   pixelRatio?: number;
   colorRange?: [number, number];
   relief?: ReliefOptions | boolean;
+  verticalExaggeration?: number;
   source?: TileSource;
   cacheBytes?: number;
 }
@@ -105,13 +106,20 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
     maxValue: colorRange?.[1],
     cacheBytes: options.cacheBytes,
     relief: options.relief,
+    verticalExaggeration: options.verticalExaggeration,
     noDataColor: (NO_DATA[0] | (NO_DATA[1] << 8) | (NO_DATA[2] << 16) | (255 << 24)) >>> 0,
   });
 
   // Test views are in device pixels of the canvas, engine views in CSS pixels
   const setView = (view: View) => {
     const dpr = engine.devicePixelRatio;
-    engine.setView({ k: view.k / dpr, x: view.tx / dpr, y: view.ty / dpr });
+    engine.setView({
+      k: view.k / dpr,
+      x: view.tx / dpr,
+      y: view.ty / dpr,
+      rotation: view.rotation,
+      tilt: view.tilt,
+    });
   };
 
   return {
