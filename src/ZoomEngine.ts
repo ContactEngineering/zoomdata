@@ -117,18 +117,29 @@ export class ZoomEngine {
 
   /** Read the CSS size and pixel ratio, and size the drawing buffer */
   private measure(): void {
+    const canvas = this.canvas;
     const dpr = this.autoResize ? (globalThis.devicePixelRatio ?? 1) : 1;
     // A canvas without layout (not in the document) keeps its buffer size
-    const cssWidth = this.canvas.clientWidth || this.canvas.width / dpr;
-    const cssHeight = this.canvas.clientHeight || this.canvas.height / dpr;
+    const cssWidth = canvas.clientWidth || canvas.width / dpr;
+    const cssHeight = canvas.clientHeight || canvas.height / dpr;
     this.pixelRatio = dpr;
     this.cssWidth = cssWidth;
     this.cssHeight = cssHeight;
-    if (this.autoResize) {
-      const w = Math.max(1, Math.round(cssWidth * dpr));
-      const h = Math.max(1, Math.round(cssHeight * dpr));
-      if (this.canvas.width !== w) this.canvas.width = w;
-      if (this.canvas.height !== h) this.canvas.height = h;
+    if (!this.autoResize) return;
+
+    const w = Math.max(1, Math.round(cssWidth * dpr));
+    const h = Math.max(1, Math.round(cssHeight * dpr));
+    if (canvas.width === w && canvas.height === h) return;
+    // A canvas without a CSS size is laid out at the size of its drawing
+    // buffer, so resizing the buffer would resize the layout, and that the
+    // buffer again, without end. Fix the CSS size of such a canvas.
+    const style = canvas.clientWidth ? getComputedStyle(canvas) : null;
+    const before = style && { width: style.width, height: style.height };
+    canvas.width = w;
+    canvas.height = h;
+    if (before && (canvas.clientWidth !== cssWidth || canvas.clientHeight !== cssHeight)) {
+      canvas.style.width = before.width;
+      canvas.style.height = before.height;
     }
   }
 

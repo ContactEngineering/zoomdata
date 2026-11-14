@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { supportsWebGL2 } from '../../src/WebGLRenderer';
+import { ZoomEngine } from '../../src/ZoomEngine';
 import { StaticTileSource, type TileSource } from '../../src/TileSource';
 import {
   BACKGROUND,
@@ -259,6 +260,28 @@ describe('canvas size', () => {
     expect(result.mismatches, formatComparison(result)).toBe(0);
     // At k = 2 device pixels per image pixel the finest level is drawn
     expect(driver.engine.level).toBe(ref.maxLevel);
+  });
+
+  it('keeps the layout size of a canvas sized by its attributes', async () => {
+    // Without a CSS size, the buffer size is the layout size; resizing the
+    // buffer for the pixel ratio must not grow the canvas
+    Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true });
+    const canvas = document.createElement('canvas');
+    canvas.width = 200;
+    canvas.height = 160;
+    canvas.style.border = '1px solid black';
+    document.body.appendChild(canvas);
+    const engine = await ZoomEngine.create(canvas, { source: fixtureUrl('flat-v2') });
+    try {
+      await new Promise((r) => setTimeout(r, 300));
+      expect([canvas.width, canvas.height]).toEqual([400, 320]);
+      expect([canvas.clientWidth, canvas.clientHeight]).toEqual([200, 160]);
+      expect(engine.size).toEqual({ width: 200, height: 160 });
+    } finally {
+      engine.dispose();
+      canvas.remove();
+      delete (window as { devicePixelRatio?: number }).devicePixelRatio;
+    }
   });
 
   it('follows CSS size changes', async () => {
