@@ -52,6 +52,11 @@ export interface CrossSectionsOptions {
   verticalCanvas?: HTMLCanvasElement;
   /** Transparent canvas on top of the engine's canvas for the crosshair */
   overlayCanvas?: HTMLCanvasElement;
+  /**
+   * Fit the value axis of each profile to its values instead of to the
+   * range of the whole map (default: false)
+   */
+  fitValueAxis?: boolean;
   /** Called when the crosshair is placed, moved or cleared */
   onChange?: (position: { x: number; y: number } | null) => void;
 }
@@ -136,6 +141,18 @@ export class CrossSections {
     return sampleProfile(this.engine, 'y', this.position.x, r.y0, r.y1);
   }
 
+  /**
+   * Draw the profiles again, e.g. after their canvases changed size
+   */
+  redraw(): void {
+    if (this.position) {
+      this.drawProfiles();
+    } else {
+      this.horizontal?.drawEmpty();
+      this.vertical?.drawEmpty();
+    }
+  }
+
   /** Request the tiles along both lines and redraw the profiles */
   private update(): void {
     if (!this.position) return;
@@ -174,9 +191,10 @@ export class CrossSections {
       }
       const horizontal = orientation === 'horizontal';
       const map = horizontal ? toX : toY;
-      const { min, max } = range
-        ? { min: range.Minimum, max: range.Maximum }
-        : finiteRange(profile.values);
+      const { min, max } =
+        range && !this.options.fitValueAxis
+          ? { min: range.Minimum, max: range.Maximum }
+          : finiteRange(profile.values);
       const data: LineScanData = {
         values: profile.values,
         positions: profile.positions.map(map),
