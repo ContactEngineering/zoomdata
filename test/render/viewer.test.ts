@@ -1,7 +1,7 @@
 /**
  * ZoomData, the ready-made viewer, with several instances on one page.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ZoomData } from '../../src/ZoomData';
 import { BACKGROUND, NO_DATA, readPixels } from './driver';
 import {
@@ -10,6 +10,7 @@ import {
   fixtureUrl,
   formatComparison,
   loadReference,
+  referenceValue,
   testPalette,
 } from './harness';
 
@@ -110,5 +111,174 @@ describe('ZoomData', () => {
     await expect(new ZoomData({ rootUrl: fixtureUrl('flat-v2') }).start('missing')).rejects.toThrow(
       'not found',
     );
+  });
+
+  it('reports the map described by the descriptor', async () => {
+    const ref = await loadReference('pattern-ov1');
+    const { zoomData } = await viewer('pattern-ov1');
+    expect(zoomData.getImageWidth()).toBe(150);
+    expect(zoomData.getImageHeight()).toBe(100);
+    expect(zoomData.getMaxZoomLevel()).toBe(8);
+    expect(zoomData.getOverlap()).toBe(1);
+    expect(zoomData.getMinColorBarRange()).toBe(ref.colorbarRange.Minimum);
+    expect(zoomData.getMaxColorBarRange()).toBe(ref.colorbarRange.Maximum);
+    expect(zoomData.getColorbarTitle()).toBe('Height (µm)');
+    // Pixels are 0.5 µm
+    expect(zoomData.getPixelsPerMeterWidth()).toBeCloseTo(2e6, 3);
+    expect(zoomData.getPixelsPerMeterHeight()).toBeCloseTo(2e6, 3);
+  });
+
+  it('returns neutral values before it is started', () => {
+    const zoomData = new ZoomData({ rootUrl: fixtureUrl('pattern-ov1') });
+    expect(zoomData.getEngine()).toBeNull();
+    expect(zoomData.getView()).toBeNull();
+    expect(zoomData.getZoomLevel()).toBe(0);
+    expect(zoomData.getMaxZoomLevel()).toBe(0);
+    expect(zoomData.getImageWidth()).toBe(0);
+    expect(zoomData.getColorbarTitle()).toBeNull();
+    expect(zoomData.getPosition()).toEqual({ x: 0, y: 0 });
+    expect(zoomData.screenToImage(10, 10)).toBeNull();
+    expect(zoomData.sampleAt(10, 10)).toBeNull();
+    expect(zoomData.getCrosshair()).toBeNull();
+    // Setters do nothing rather than throw
+    zoomData.setZoomLevel(3);
+    zoomData.setPosition(1, 2);
+    zoomData.resetView();
+    expect(zoomData.getView()).toBeNull();
+  });
+
+  it('relates zoom levels to the view scale and keeps the centre fixed', async () => {
+    const { zoomData } = await viewer('pattern-ov1');
+    const onZoomChange = vi.fn();
+    zoomData.onZoomChange = onZoomChange;
+    zoomData.setView({ k: 0.5, x: 30, y: 20 });
+    expect(zoomData.getZoomLevel()).toBe(7);
+    expect(onZoomChange).toHaveBeenLastCalledWith(7);
+
+    // The image point under the centre of the 200 x 160 canvas stays there
+    const centre = zoomData.screenToImage(100, 80)!;
+    zoomData.setZoomLevel(9);
+    expect(zoomData.getView()!.k).toBe(2);
+    expect(zoomData.getZoomLevel()).toBe(9);
+    expect(onZoomChange).toHaveBeenLastCalledWith(9);
+    const after = zoomData.screenToImage(100, 80)!;
+    expect(after.x).toBeCloseTo(centre.x, 9);
+    expect(after.y).toBeCloseTo(centre.y, 9);
+  });
+
+  it('moves the view and fits it to the canvas', async () => {
+    const { zoomData } = await viewer('pattern-ov1');
+    zoomData.setView({ k: 2, x: 0, y: 0 });
+    zoomData.setPosition(-40, 15);
+    expect(zoomData.getPosition()).toEqual({ x: -40, y: 15 });
+    expect(zoomData.getView()).toEqual({ k: 2, x: -40, y: 15 });
+    expect(zoomData.screenToImage(0, 15)).toEqual({ x: 20, y: 0 });
+
+    // 150 x 100 in 200 x 160: the width limits the scale
+    zoomData.resetView();
+    const view = zoomData.getView()!;
+    expect(view.k).toBeCloseTo(200 / 150, 12);
+    expect(view.x).toBeCloseTo(0, 12);
+    expect(view.y).toBeCloseTo((160 - (200 / 150) * 100) / 2, 12);
+  });
+
+  it('samples values from the tiles it has drawn', async () => {
+    const ref = await loadReference('nan-v2');
+    const { zoomData } = await viewer('nan-v2');
+    zoomData.setView({ k: 1, x: 0, y: 0 });
+    await settle(zoomData);
+    const p = zoomData.screenToImage(97.5, 66.5)!;
+    const s = zoomData.sampleAt(p.x, p.y)!;
+    expect(s.level).toBe(ref.maxLevel);
+    expect(s.value).toBeCloseTo(referenceValue(ref, ref.maxLevel, p.x, p.y)!, 6);
+    // Inside the hole of undefined points
+    expect(zoomData.sampleAt(40, 60)!.value).toBeNaN();
+  });
+
+  it('places the crosshair inside the map and reports it', async () => {
+    const { zoomData } = await viewer('pattern-ov1');
+    const onCrosshairChange = vi.fn();
+    zoomData.onCrosshairChange = onCrosshairChange;
+    zoomData.placeCrosshair(-5, 500);
+    expect(zoomData.getCrosshair()).toEqual({ x: 0, y: 99 });
+    expect(onCrosshairChange).toHaveBeenLastCalledWith(0, 99);
+    zoomData.placeCrosshair(40.5, 30.25);
+    expect(zoomData.getCrosshair()).toEqual({ x: 40.5, y: 30.25 });
+
+    zoomData.clearCrosshair();
+    expect(zoomData.getCrosshair()).toBeNull();
+    // Clearing is not reported as a position
+    expect(onCrosshairChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('places the crosshair on double click', async () => {
+    const { zoomData, main } = await viewer('pattern-ov1');
+    zoomData.setView({ k: 2, x: 10, y: 20 });
+    const rect = main.getBoundingClientRect();
+    main.dispatchEvent(
+      new MouseEvent('dblclick', { clientX: rect.left + 50, clientY: rect.top + 60 }),
+    );
+    expect(zoomData.getCrosshair()).toEqual({ x: 20, y: 20 });
+  });
+
+  it('can run without input handling', async () => {
+    const c = canvas(200, 160);
+    const zoomData = new ZoomData({ rootUrl: fixtureUrl('pattern-ov1'), controller: false });
+    await zoomData.start(c);
+    cleanup.push(() => zoomData.stop());
+    const view = zoomData.getView();
+    c.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, cancelable: true }));
+    c.dispatchEvent(new MouseEvent('dblclick'));
+    expect(zoomData.getView()).toEqual(view);
+    expect(zoomData.getCrosshair()).toBeNull();
+  });
+
+  it('draws with a new colour range and palette', async () => {
+    const ref = await loadReference('pattern-ov1');
+    const { zoomData, main } = await viewer('pattern-ov1');
+    const view = { k: 1, x: 5, y: 3 };
+    zoomData.setView(view);
+    await settle(zoomData);
+    const { Minimum: mn, Maximum: mx } = ref.colorbarRange;
+    const range: [number, number] = [mn + 0.2 * (mx - mn), mn + 0.6 * (mx - mn)];
+    zoomData.setColorRange(...range);
+    zoomData.getEngine()!.render();
+    const expected = expectedImage(ref, { k: 1, tx: 5, ty: 3 }, 200, 160, { colorRange: range });
+    const result = compare(readPixels(main), expected, 200, OPTIONS);
+    expect(result.mismatches, formatComparison(result)).toBe(0);
+
+    // A palette of a single colour paints the whole map in it
+    zoomData.setColorPalette([0xff336699]);
+    zoomData.getEngine()!.render();
+    const pixels = readPixels(main);
+    const at = (x: number, y: number) => [
+      ...pixels.slice(4 * (y * 200 + x), 4 * (y * 200 + x) + 3),
+    ];
+    expect(at(10, 10)).toEqual([0x99, 0x66, 0x33]);
+    expect(at(150, 100)).toEqual([0x99, 0x66, 0x33]);
+    // Outside the map
+    expect(at(190, 150)).toEqual(BACKGROUND);
+  });
+
+  it('reports a pyramid that cannot be loaded', async () => {
+    const zoomData = new ZoomData({ rootUrl: fixtureUrl('missing') });
+    const onError = vi.fn();
+    zoomData.onError = onError;
+    await expect(zoomData.start(canvas(100, 80))).rejects.toThrow('HTTP 404');
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('HTTP 404') }),
+    );
+    expect(zoomData.getEngine()).toBeNull();
+  });
+
+  it('needs a source and a canvas', async () => {
+    expect(() => new ZoomData({})).toThrow('either source or rootUrl');
+    const div = document.createElement('div');
+    div.id = 'zoomdata-test-div';
+    document.body.appendChild(div);
+    cleanup.push(() => div.remove());
+    await expect(
+      new ZoomData({ rootUrl: fixtureUrl('flat-v2') }).start('zoomdata-test-div'),
+    ).rejects.toThrow('not a canvas');
   });
 });

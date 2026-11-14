@@ -83,6 +83,9 @@ npm test
 # every pixel with an image computed from reference data
 npx playwright install chromium   # once
 npm run test:render
+
+# Both, with coverage of the library; the HTML report is in coverage/
+npm run test:coverage
 ```
 
 On a mismatch, the render tests write the actual, expected and diff images

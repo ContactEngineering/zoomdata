@@ -52,9 +52,11 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npx vitest run
+        run: npm test -- --run
 
   render:
+    # Render tests in headless Chromium, run together with the unit tests to
+    # measure coverage of both
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,8 +73,19 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run render tests
-        run: npm run test:render
+      - name: Run unit and render tests with coverage
+        run: npm run test:coverage
+
+      - name: Summarise coverage
+        if: always() && hashFiles('coverage/coverage-summary.json') != ''
+        run: node .github/scripts/coverage-summary.mjs >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: always() && hashFiles('coverage/coverage-summary.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
 
       - name: Upload render diagnostics
         if: failure()
