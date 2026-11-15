@@ -250,7 +250,9 @@ describe('relief shading', () => {
   });
 });
 
-describe('orthographic view', () => {
+// The reference images of tilted views take seconds each: the harness finds,
+// for four samples of every pixel, where the line of sight meets the surface
+describe('orthographic view', { timeout: 120_000 }, () => {
   // A full turn is the plain view, but drawn as a surface mesh
   describe('draws the plain image through the surface mesh', () => {
     for (const fixture of ['pattern-ov1', 'pattern-ov0', 'pattern-ov2', 'nan-v2']) {
@@ -262,7 +264,16 @@ describe('orthographic view', () => {
         it(`${fixture}: ${name}`, async () => {
           const { ref, driver } = await setup(fixture, { relief: true });
           const pixels = await driver.render({ ...view, rotation: 360 });
-          await check(`mesh ${fixture} ${name}`, ref, pixels, view, { relief: DEFAULT_RELIEF });
+          await check(
+            `mesh ${fixture} ${name}`,
+            ref,
+            pixels,
+            { ...view, rotation: 360 },
+            {
+              relief: DEFAULT_RELIEF,
+              antialias: OPTIONS,
+            },
+          );
         });
       }
     }
@@ -280,7 +291,9 @@ describe('orthographic view', () => {
           WIDTH / 2,
           HEIGHT / 2,
         );
-        await check(`turned ${rotation}`, ref, await driver.render(view), view);
+        await check(`turned ${rotation}`, ref, await driver.render(view), view, {
+          antialias: OPTIONS,
+        });
       });
     }
   });
@@ -306,6 +319,7 @@ describe('orthographic view', () => {
         const pixels = await driver.render(view);
         const expected = expectedImage(ref, view, WIDTH, HEIGHT, {
           verticalExaggeration: exaggeration,
+          antialias: OPTIONS,
         });
         const result = compare(pixels, expected, WIDTH, OPTIONS);
         if (result.mismatches > 0) {
@@ -320,8 +334,8 @@ describe('orthographic view', () => {
         }
         expect(result.mismatches, formatComparison(result)).toBe(0);
         // Much of the canvas is checked and shows the map
-        const shown = expected.filter((e) => e.kind !== 'skip' && e.kind !== 'background').length;
-        expect(shown).toBeGreaterThan(k > 1 ? 0.15 * WIDTH * HEIGHT : 300);
+        const shown = expected.filter((e) => e.kind === 'mean' && e.map).length;
+        expect(shown).toBeGreaterThan(k > 1 ? 0.15 * WIDTH * HEIGHT : 100);
       });
     }
 
@@ -332,17 +346,22 @@ describe('orthographic view', () => {
       await check('tilted relief', ref, await driver.render(view), view, {
         verticalExaggeration: 8,
         relief: DEFAULT_RELIEF,
+        antialias: OPTIONS,
       });
     });
 
     it('hides what lies behind higher ground', async () => {
       // Seen from a low angle with strong exaggeration, the ridges of the
       // pattern hide the valleys behind them: fewer level pixels show than
-      // in the plain view, and the image still matches
+      // in the plain view, and the image still matches. The reference
+      // image takes a while at this exaggeration.
       const { ref, driver } = await setup('pattern-ov1', { verticalExaggeration: 40 });
       const view = orbit({ k: 4, tx: -200, ty: -120, rotation: 0, tilt: 0 }, 0, 70, 100, 80);
       const pixels = await driver.render(view);
-      const expected = expectedImage(ref, view, WIDTH, HEIGHT, { verticalExaggeration: 40 });
+      const expected = expectedImage(ref, view, WIDTH, HEIGHT, {
+        verticalExaggeration: 40,
+        antialias: OPTIONS,
+      });
       const result = compare(pixels, expected, WIDTH, OPTIONS);
       expect(result.mismatches, formatComparison(result)).toBe(0);
       expect(result.checked).toBeGreaterThan(0.2 * WIDTH * HEIGHT);
@@ -365,6 +384,113 @@ describe('orthographic view', () => {
       expect(hidden()).toBeGreaterThan(50);
       driver.engine.setVerticalExaggeration(0);
       expect(hidden()).toBe(0);
+    });
+  });
+
+  describe('anti-aliasing', () => {
+    const tilted = () =>
+      orbit({ k: 3, tx: -125, ty: -70, rotation: 0, tilt: 0 }, 30, 55, WIDTH / 2, HEIGHT / 2);
+
+    it('smooths the edges of the surface and the borders between values', async () => {
+      const { ref, driver } = await setup('pattern-ov1', { verticalExaggeration: 8 });
+      // The whole map, small enough for its edges to show
+      const view = orbit({ k: 1.5, tx: -12.5, ty: 5, rotation: 0, tilt: 0 }, 30, 55, 100, 80);
+      const pixels = await driver.render(view);
+      const expected = expectedImage(ref, view, WIDTH, HEIGHT, {
+        verticalExaggeration: 8,
+        antialias: OPTIONS,
+      });
+      const result = compare(pixels, expected, WIDTH, OPTIONS);
+      expect(result.mismatches, formatComparison(result)).toBe(0);
+
+      // Pixels on an edge of the surface, where some samples show the map
+      // and others the background, are checked and have a colour in between
+      const edge = expected.flatMap((e, i) =>
+        e.kind === 'mean' && e.mixed && e.map ? [[e, i] as const] : [],
+      );
+      expect(edge.length).toBeGreaterThan(20);
+      const between = edge.filter(([, i]) => {
+        const blue = pixels[4 * i + 2];
+        // Blue is 128 on the map and 242 behind it
+        return blue > 128 + 15 && blue < BACKGROUND[2] - 15;
+      });
+      expect(between.length).toBeGreaterThan(10);
+    });
+
+    it('can be switched off, for whole values in every pixel', async () => {
+      const { ref, driver } = await setup('pattern-ov1', {
+        verticalExaggeration: 8,
+        antialias: false,
+      });
+      const view = tilted();
+      const pixels = await driver.render(view);
+      const expected = expectedImage(ref, view, WIDTH, HEIGHT, { verticalExaggeration: 8 });
+      const result = compare(pixels, expected, WIDTH, OPTIONS);
+      expect(result.mismatches, formatComparison(result)).toBe(0);
+      expect(result.checked).toBeGreaterThan(0.3 * WIDTH * HEIGHT);
+    });
+
+    it('switches while showing, without re-uploading textures', async () => {
+      const { ref, driver } = await setup('pattern-ov1', { verticalExaggeration: 8 });
+      const view = tilted();
+      await driver.render(view);
+      const upload = vi.spyOn(WebGL2RenderingContext.prototype, 'texImage2D');
+      const matches = (antialias: boolean) => {
+        const expected = expectedImage(ref, view, WIDTH, HEIGHT, {
+          verticalExaggeration: 8,
+          antialias: antialias ? OPTIONS : undefined,
+        });
+        return compare(driver!.renderNow(view), expected, WIDTH, OPTIONS);
+      };
+      try {
+        driver.engine.setAntialias(false);
+        expect(matches(false).mismatches).toBe(0);
+        // The plain image differs from the smoothed one, and the other way round
+        expect(matches(true).mismatches).toBeGreaterThan(100);
+        driver.engine.setAntialias(true);
+        expect(matches(true).mismatches).toBe(0);
+        expect(upload).not.toHaveBeenCalled();
+      } finally {
+        upload.mockRestore();
+      }
+    });
+
+    it('does not touch the plain view', async () => {
+      // Looking straight down, every pixel shows one value: the image is
+      // the same with and without
+      const view = { k: 1.5, tx: -12.5, ty: 5.25 };
+      const images: Uint8Array[] = [];
+      for (const antialias of [true, false]) {
+        const { ref, driver: d } = await setup('pattern-ov1', { antialias });
+        const pixels = await d.render(view);
+        await check(`plain antialias ${antialias}`, ref, pixels, view);
+        images.push(pixels);
+        d.dispose();
+        driver = null;
+      }
+      expect(images[0]).toEqual(images[1]);
+    });
+
+    it('follows the size of the canvas and survives the loss of the context', async () => {
+      const { ref, driver } = await setup('pattern-ov1', { verticalExaggeration: 8 });
+      const check3d = async (width: number, height: number) => {
+        const view = orbit({ k: 3, tx: -125, ty: -70, rotation: 0, tilt: 0 }, 30, 55, 60, 45);
+        const pixels = await driver.render(view);
+        const expected = expectedImage(ref, view, width, height, {
+          verticalExaggeration: 8,
+          antialias: OPTIONS,
+        });
+        const result = compare(pixels, expected, width, OPTIONS);
+        expect(result.mismatches, formatComparison(result)).toBe(0);
+        expect(result.checked).toBeGreaterThan(0.3 * width * height);
+      };
+      await check3d(WIDTH, HEIGHT);
+      driver.canvas.style.width = '120px';
+      driver.canvas.style.height = '90px';
+      await expect.poll(() => driver.canvas.width).toBe(120);
+      await check3d(120, 90);
+      await driver.loseContext();
+      await check3d(120, 90);
     });
   });
 

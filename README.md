@@ -170,6 +170,7 @@ const viewer = new ZoomData(options: ZoomDataOptions);
 | `backgroundColor`      | `number`             | light grey              | Colour behind the image (ABGR)                      |
 | `relief`               | `boolean` or options | off                     | Relief shading, see below                           |
 | `verticalExaggeration` | `number`             | `1`                     | Height scale of the surface in the tilted view      |
+| `antialias`            | `boolean`            | `true`                  | Smooth the turned or tilted view                    |
 | `zoomLevelIncrement`   | `number`             | `0.1`                   | Zoom change per scroll                              |
 
 #### Methods
@@ -240,8 +241,16 @@ The tilt is at most 75°, measured from looking straight down. At a vertical
 exaggeration of 1, heights and lateral distances have the same scale if the
 pyramid states the unit of its heights and its pixel size. With the default
 controller, dragging with the right mouse button or with Shift turns and
-tilts the map. Tiles need an overlap of at least one pixel to join without
-steps in this view and for relief shading without seams.
+tilts the map, and twisting two fingers turns it. Tiles need an overlap of
+at least one pixel to join without steps in this view and for relief shading
+without seams.
+
+The turned or tilted view is anti-aliased: each pixel shows the mean of four
+samples, which smooths the edges of the surface and the borders between
+values where they are smaller than a pixel. This takes four times the fill
+work and memory of that view; switch it off with `antialias: false` or
+`engine.setAntialias(false)`. Canvases beyond about 10 megapixels are drawn
+without. The plain view is never smoothed: every pixel shows one value.
 
 Cross-sections through a crosshair are an optional helper:
 

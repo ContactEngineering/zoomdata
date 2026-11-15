@@ -8,7 +8,7 @@ import { TileCache } from './TileCache.js';
 import { TileLoader, type TileLoaderOptions, type TileRequest } from './TileLoader.js';
 import {
   WebGLRenderer,
-  type RendererColors,
+  type RendererOptions,
   type TileTexture,
   type ViewTransform,
 } from './WebGLRenderer.js';
@@ -75,7 +75,7 @@ export class TiledImage {
     palette: number[],
     minValue: number,
     maxValue: number,
-    colors: RendererColors = {},
+    colors: RendererOptions = {},
   ): void {
     this.renderer = new WebGLRenderer(canvas, palette, colors);
     this.colorRange = [minValue, maxValue];
@@ -334,9 +334,17 @@ export class TiledImage {
         }
       }
     }
+    this.renderer.endFrame();
     this.loader.update(requests);
     // Tiles that left the view are no longer pinned
     this.tileCache.trim();
+  }
+
+  /**
+   * Smooth the tilted or rotated view (see WebGLRenderer.setAntialias)
+   */
+  setAntialias(antialias: boolean): void {
+    this.renderer?.setAntialias(antialias);
   }
 
   /**

@@ -262,12 +262,22 @@ function unpackColor(color: number): [number, number, number, number] {
   return [color & 0xff, (color >>> 8) & 0xff, (color >>> 16) & 0xff, (color >>> 24) & 0xff];
 }
 
-export interface RendererColors {
+export interface RendererOptions {
   /** 32-bit ABGR colour of undefined points (default: transparent) */
   noData?: number;
   /** 32-bit ABGR colour behind the image (default: light grey) */
   background?: number;
+  /** Smooth the tilted or rotated view, see setAntialias (default: true) */
+  antialias?: boolean;
 }
+
+/**
+ * The anti-aliased view is drawn with this many samples along each side of
+ * a canvas pixel, and each pixel shows their mean
+ */
+const SUPERSAMPLING = 2;
+/** Most samples the anti-aliased view may take; beyond, it is drawn plainly */
+const MAX_SAMPLES = 40e6;
 
 export class WebGLRenderer {
   private readonly canvas: HTMLCanvasElement;
@@ -291,6 +301,17 @@ export class WebGLRenderer {
   // Largest depth of the frame, for the depth buffer
   private depthRange = 1;
   private imageSize = { width: 1, height: 1 };
+
+  // Anti-aliasing of the tilted view: it is drawn into `target` with
+  // `samples` samples along each side of a canvas pixel, then reduced
+  private antialias: boolean;
+  private samples = 1;
+  private target: {
+    framebuffer: WebGLFramebuffer;
+    buffers: WebGLRenderbuffer[];
+    width: number;
+    height: number;
+  } | null = null;
   private relief: Required<ReliefOptions> | null = null;
   private lost = false;
 
@@ -309,7 +330,7 @@ export class WebGLRenderer {
     this.onContextRestored?.();
   };
 
-  constructor(canvas: HTMLCanvasElement, palette: number[], colors: RendererColors = {}) {
+  constructor(canvas: HTMLCanvasElement, palette: number[], colors: RendererOptions = {}) {
     const gl = canvas.getContext('webgl2', {
       alpha: false,
       antialias: false,
@@ -323,6 +344,7 @@ export class WebGLRenderer {
     this.palette = palette;
     this.noData = unpackColor(colors.noData ?? 0);
     this.background = unpackColor(colors.background ?? 0xfff2f2f2);
+    this.antialias = colors.antialias ?? true;
     this.initResources();
     canvas.addEventListener('webglcontextlost', this.handleLost);
     canvas.addEventListener('webglcontextrestored', this.handleRestored);
@@ -362,8 +384,9 @@ export class WebGLRenderer {
       'u_clip',
       ...shared,
     ]);
-    // Built when the tilted view first needs it
+    // Built when the tilted view first needs them
     this.grid = null;
+    this.target = null;
 
     this.vao = gl.createVertexArray()!;
     gl.bindVertexArray(this.vao);
@@ -487,16 +510,108 @@ export class WebGLRenderer {
     this.view = { rotation: 0, tilt: 0, ...view };
     this.imageSize = imageSize;
     this.depthRange = view.k * extent + 1;
+    this.samples = 1;
     if (this.lost) return;
     const gl = this.gl;
-    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    const plain = isPlain(this.view);
+    // The plain view shows every value in whole pixels and is not smoothed
+    const target = plain || !this.antialias ? null : this.sampleTarget();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target?.framebuffer ?? null);
+    if (target) {
+      this.samples = SUPERSAMPLING;
+      gl.viewport(0, 0, target.width, target.height);
+    } else {
+      gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    }
     const [r, g, b] = this.background;
     gl.clearColor(r / 255, g / 255, b / 255, 1);
     gl.clearDepth(1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     // In the tilted view, parts of the surface hide others
-    if (isPlain(this.view)) gl.disable(gl.DEPTH_TEST);
+    if (plain) gl.disable(gl.DEPTH_TEST);
     else gl.enable(gl.DEPTH_TEST);
+  }
+
+  /**
+   * Finish the frame: reduce the samples of the anti-aliased view to the
+   * pixels of the canvas
+   */
+  endFrame(): void {
+    const target = this.target;
+    if (this.lost || this.samples === 1 || !target) return;
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, target.framebuffer);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    // Each canvas pixel lies between SUPERSAMPLING x SUPERSAMPLING samples,
+    // so linear filtering gives their mean
+    gl.blitFramebuffer(
+      0,
+      0,
+      target.width,
+      target.height,
+      0,
+      0,
+      this.canvas.width,
+      this.canvas.height,
+      gl.COLOR_BUFFER_BIT,
+      gl.LINEAR,
+    );
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  /**
+   * Smooth the tilted or rotated view: edges of the surface, and the
+   * borders between values where they are smaller than a pixel. It costs
+   * four times the fill work and memory of that view. The plain view is
+   * never smoothed.
+   */
+  setAntialias(antialias: boolean): void {
+    this.antialias = antialias;
+  }
+
+  /**
+   * Buffers for the samples of the anti-aliased view, or null if the canvas
+   * is too large for them
+   */
+  private sampleTarget(): WebGLRenderer['target'] {
+    const gl = this.gl;
+    const width = this.canvas.width * SUPERSAMPLING;
+    const height = this.canvas.height * SUPERSAMPLING;
+    if (this.target?.width === width && this.target.height === height) return this.target;
+    this.deleteTarget();
+    if (
+      width * height > MAX_SAMPLES ||
+      Math.max(width, height) > gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)
+    ) {
+      return null;
+    }
+    const framebuffer = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    const buffers = (
+      [
+        [gl.RGBA8, gl.COLOR_ATTACHMENT0],
+        [gl.DEPTH_COMPONENT24, gl.DEPTH_ATTACHMENT],
+      ] as const
+    ).map(([format, attachment]) => {
+      const buffer = gl.createRenderbuffer()!;
+      gl.bindRenderbuffer(gl.RENDERBUFFER, buffer);
+      gl.renderbufferStorage(gl.RENDERBUFFER, format, width, height);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, attachment, gl.RENDERBUFFER, buffer);
+      return buffer;
+    });
+    const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.target = { framebuffer, buffers, width, height };
+    if (!complete) this.deleteTarget();
+    return this.target;
+  }
+
+  private deleteTarget(): void {
+    if (!this.target) return;
+    const gl = this.gl;
+    gl.deleteFramebuffer(this.target.framebuffer);
+    this.target.buffers.forEach((b) => gl.deleteRenderbuffer(b));
+    this.target = null;
   }
 
   /** Mesh of n x n vertices, as triangles row by row */
@@ -621,8 +736,10 @@ export class WebGLRenderer {
     gl.uniform1f(u.u_stride, stride);
     gl.uniform2f(u.u_height, placement.heightScale, placement.heightOffset);
     gl.uniform4f(u.u_turn, Math.cos(rotation), Math.sin(rotation), Math.cos(tilt), Math.sin(tilt));
-    gl.uniform3f(u.u_screen, view.k, width / 2, height / 2);
-    gl.uniform3f(u.u_clip, width, height, this.depthRange);
+    // In samples: several to a canvas pixel in the anti-aliased view
+    const n = this.samples;
+    gl.uniform3f(u.u_screen, n * view.k, (n * width) / 2, (n * height) / 2);
+    gl.uniform3f(u.u_clip, n * width, n * height, n * this.depthRange);
     this.bindShared(u, tileTexture, placement);
 
     // Rows of the mesh beyond the region are empty
@@ -681,6 +798,7 @@ export class WebGLRenderer {
     const gl = this.gl;
     gl.deleteProgram(this.program);
     gl.deleteProgram(this.surfaceProgram);
+    this.deleteTarget();
     if (this.grid) {
       gl.deleteVertexArray(this.grid.vao);
       this.grid.buffers.forEach((b) => gl.deleteBuffer(b));

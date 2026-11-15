@@ -16,8 +16,8 @@ Style for this changelog (keep to it so entries stay uniform):
 Change log for zoomdata
 =======================
 
-v0.1.0 (not yet released)
--------------------------
+v0.1.0 (15Nov26)
+----------------
 
 - ENH: First release: zoomable height maps in the browser, drawn with WebGL2 from the NetCDF tile
   pyramids that SurfaceTopography writes
@@ -44,6 +44,9 @@ v0.1.0 (not yet released)
   adjustable vertical exaggeration; zooming works as in the plain view
 - ENH: In the tilted view the pointer reads the point of the surface under it, and cross-section
   lines follow the surface
+- ENH: The turned or tilted view is anti-aliased, with four samples per pixel; it can be switched
+  off, and the plain view always shows one value per pixel
+- ENH: Twisting two fingers turns the map on touch screens
 - ENH: Scale bar, colour bar, and a demo application with a generator for its data
 - API: Colour ranges are given in the physical units of the data, and default to its full range
 - API: Overlay and cross-section canvases are passed to the viewer instead of being found by id

@@ -80,6 +80,7 @@ export interface DriverOptions {
   colorRange?: [number, number];
   relief?: ReliefOptions | boolean;
   verticalExaggeration?: number;
+  antialias?: boolean;
   source?: TileSource;
   cacheBytes?: number;
 }
@@ -107,6 +108,7 @@ export async function createDriver(ref: Reference, options: DriverOptions = {}):
     cacheBytes: options.cacheBytes,
     relief: options.relief,
     verticalExaggeration: options.verticalExaggeration,
+    antialias: options.antialias,
     noDataColor: (NO_DATA[0] | (NO_DATA[1] << 8) | (NO_DATA[2] << 16) | (255 << 24)) >>> 0,
   });
 

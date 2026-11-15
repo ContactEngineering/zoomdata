@@ -97,6 +97,7 @@ export class ZoomData {
         autoResize: this.options.autoResize,
         relief: this.options.relief,
         verticalExaggeration: this.options.verticalExaggeration,
+        antialias: this.options.antialias,
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
