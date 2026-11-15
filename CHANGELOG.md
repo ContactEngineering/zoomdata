@@ -16,8 +16,8 @@ Style for this changelog (keep to it so entries stay uniform):
 Change log for zoomdata
 =======================
 
-v0.1.0 (not yet released)
--------------------------
+v0.1.0 (15Nov26)
+----------------
 
 - ENH: First release: zoomable height maps in the browser, drawn with WebGL2 from the NetCDF tile
   pyramids that SurfaceTopography writes
