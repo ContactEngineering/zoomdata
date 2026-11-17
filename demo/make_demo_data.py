@@ -10,14 +10,17 @@ drawn.
 
 The pyramid is written with SurfaceTopography to `demo/data/<name>`, which
 the demo's dev server serves at `/data/` and git ignores, and is listed in
-`demo/data/datasets.json`, from which the demo fills its dataset menu. Run it again with other parameters and another `--name` to add
-datasets:
+`demo/data/datasets.json`, from which the demo fills its dataset menu. By
+default it is a single zipped OME-Zarr file, `pyramid.ozx`; with
+`--format nc` it is a directory of NetCDF tiles. Run it again with other
+parameters and another `--name` to add datasets:
 
     python demo/make_demo_data.py
     python demo/make_demo_data.py --name eggbox-8k --size 8192
+    python demo/make_demo_data.py --name eggbox-nc --format nc
 
-It needs SurfaceTopography with NetCDF tile format version 2 (v1.28.0 or
-later). The default map of 4096 x 4096 points takes about 90 MB.
+It needs SurfaceTopography with `to_zarr_pyramid` and its `zarr` extra
+(after v1.28.0). The default map of 4096 x 4096 points takes about 90 MB.
 """
 
 import argparse
@@ -102,8 +105,14 @@ def main():
     parser.add_argument("--hurst", type=float, default=0.6, help="Hurst exponent")
     parser.add_argument("--holes", type=int, default=3, help="patches of undefined points")
     parser.add_argument("--tile-size", type=int, default=256)
-    parser.add_argument("--overlap", type=int, default=1)
+    parser.add_argument("--overlap", type=int, default=1, help="overlap of NetCDF tiles")
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument(
+        "--format",
+        choices=("zarr", "nc"),
+        default="zarr",
+        help="zipped OME-Zarr file or NetCDF tiles",
+    )
     parser.add_argument(
         "--output",
         default=os.path.join(HERE, "data"),
@@ -126,15 +135,22 @@ def main():
     root = os.path.join(args.output, args.name)
     shutil.rmtree(root, ignore_errors=True)
     os.makedirs(root)
-    manifest = topography.to_dzi(
-        "dzdata",
-        root,
-        tile_size=args.tile_size,
-        overlap=args.overlap,
-        format="nc",
-        meta_format="json",
-        nc_version=2,
-    )
+    if args.format == "zarr":
+        # Tiles get their overlap when the viewer reads them
+        manifest = [os.path.join(root, "pyramid.ozx")]
+        topography.to_zarr_pyramid(manifest[0], tile_size=args.tile_size)
+        url = f"data/{args.name}/pyramid.ozx"
+    else:
+        manifest = topography.to_dzi(
+            "dzdata",
+            root,
+            tile_size=args.tile_size,
+            overlap=args.overlap,
+            format="nc",
+            meta_format="json",
+            nc_version=2,
+        )
+        url = f"data/{args.name}/"
     nbytes = sum(os.path.getsize(fn) for fn in manifest)
 
     # List the dataset for the demo's menu, keeping the other datasets
@@ -153,14 +169,17 @@ def main():
                 f"amplitude {args.amplitude:g} µm, roughness "
                 f"{1000 * args.roughness * args.amplitude:g} nm rms"
             ),
-            "url": f"data/{args.name}/",
+            "url": url,
         }
     )
     datasets.sort(key=lambda d: d["name"])
     with open(index_fn, "w") as f:
         json.dump(datasets, f, indent=1)
 
-    print(f"{root}: {len(manifest) - 1} tiles, {nbytes / 1e6:.0f} MB")
+    if args.format == "zarr":
+        print(f"{manifest[0]}: {nbytes / 1e6:.0f} MB")
+    else:
+        print(f"{root}: {len(manifest) - 1} tiles, {nbytes / 1e6:.0f} MB")
 
 
 if __name__ == "__main__":

@@ -1,12 +1,19 @@
 # Pyramid format
 
-This is the contract between the writer (SurfaceTopography's `write_dzi`
-with `format="nc"`, `meta_format="json"`) and the zoomdata reader. The reader
-accepts format versions 1 and 2 and rejects any other version.
+This is the contract between the writers in SurfaceTopography and the
+zoomdata reader. A pyramid is stored in one of two ways:
+
+- as a single zipped OME-Zarr file (`.ozx`), written by `to_zarr_pyramid`
+  (or `write_zarr_pyramid`), see [Zipped OME-Zarr](#zipped-ome-zarr);
+- as a descriptor and one NetCDF file per tile, written by `write_dzi` with
+  `format="nc"`, `meta_format="json"`. The reader accepts NetCDF format
+  versions 1 and 2 and rejects any other version.
+
+Both share the [geometry](#geometry) of levels and tiles.
 
 ## Layout
 
-A pyramid is a descriptor and one file per tile:
+A NetCDF pyramid is a descriptor and one file per tile:
 
 ```
 <root>/dzdata.json
@@ -112,3 +119,81 @@ physical values in double precision as `h = add_offset + scale_factor * v`,
 taking `scale_factor` and `add_offset` from the tile's attributes, else from
 the descriptor (`Encoding` for version 2, `ColorbarRange` for version 1).
 All values the reader exposes are in physical units, for both versions.
+
+## Zipped OME-Zarr
+
+The file is a ZIP archive of a [Zarr v3](https://zarr-specs.readthedocs.io/)
+hierarchy with [OME-Zarr 0.5](https://ngff.openmicroscopy.org/0.5/)
+multiscales metadata, laid out as
+[RFC-9](https://ngff.openmicroscopy.org/rfc/9/) recommends: entries are not
+compressed by the ZIP, the root `zarr.json` comes first, followed by the
+`zarr.json` of every level and then the data. A reader therefore finds all
+metadata at the start of the file, and the ZIP's central directory at its
+end.
+
+```
+zarr.json          root group: attributes "ome" and "zoomdata"
+0/zarr.json        full resolution
+1/zarr.json        every further level halves the resolution
+...
+0/c/<j>/<i>        shards of level 0
+...
+```
+
+### Levels
+
+The array at path `k` (the `k`-th dataset of the multiscales) is level
+`maxLevel - k` of the [geometry](#geometry): array `0` is the full
+resolution, `W` x `H` pixels, and array `k` is `ceil(W / 2^k)` x
+`ceil(H / 2^k)` pixels. The arrays stop at the first level that fits into
+a single chunk, which is the base level of the geometry; the reader does
+not draw coarser levels.
+
+Each array
+
+- has shape `(H_k, W_k)` and dimension names `(y, x)`, i.e. x varies
+  fastest, as the reader holds tiles in memory;
+- is float32 (float64 is accepted), with fill value NaN for undefined
+  points; chunks and shards without defined points need not be stored;
+- has square chunks of `T` x `T` pixels, the tile size, the same for all
+  levels. Chunks may be grouped into shards (`sharding_indexed` codec);
+  any codecs zarrita reads are accepted.
+- carries the CF attributes `scale_factor` and `add_offset`, which turn
+  stored values `v` into physical values `h = add_offset + scale_factor * v`
+  (default 1 and 0), and `units`, the unit of the heights.
+
+Chunks do not overlap. The reader cuts tiles of the geometry out of the
+level, extended by the overlap it is configured with (default 1), from the
+neighbouring chunks.
+
+### Root attributes
+
+`ome.multiscales[0]` must have the axes `y` and `x`, in this order. The
+`scale` transformation of the first dataset is the pixel size along y and
+x, in the unit of the axes (UDUNITS-2 names, e.g. `micrometer`). Translations
+are ignored; the reader locates a coarse pixel at the first point of its
+block, as in the [geometry](#geometry).
+
+`zoomdata` holds what the viewer needs beyond that, all fields optional:
+
+| Field           | Meaning                                                         |
+| --------------- | --------------------------------------------------------------- |
+| `version`       | Version of these attributes; the reader accepts 1 (default)     |
+| `unit`          | Unit of the heights, spelled as SurfaceTopography writes it     |
+| `colorbarRange` | `minimum` and `maximum` of the defined physical values          |
+| `colorbarTitle` | Axis title, e.g. `Height (µm)`                                  |
+| `colormap`      | Colour map name suggested by the writer                         |
+| `detrend`       | Detrend mode applied before writing, e.g. `height`, `curvature` |
+| `downsample`    | How coarse levels were computed: `mean` or `nearest`            |
+
+Without `unit`, the reader takes the `units` attribute of array `0`, then
+the unit of the axes.
+
+### Reading over HTTP
+
+The reader fetches the first 64 KiB of the file, which holds the metadata,
+and the last 64 KiB, which holds the central directory; then every chunk
+with a range request of its own, adjacent ones merged. Requests after the
+first carry `If-Match` with the file's ETag, so a file replaced on the
+server fails instead of mixing two versions. The server must answer range
+requests and, for cross-origin requests, expose `Content-Range` and `ETag`.

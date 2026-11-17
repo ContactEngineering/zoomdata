@@ -29,6 +29,9 @@ export interface TileAddress {
  * `[col*tileSize, (col+1)*tileSize)` (truncated at the level boundary); the
  * stored tile extends the core by `overlap` pixels on every side where
  * there is data.
+ *
+ * A pyramid may stop before level 0: `minLevel` is the coarsest level it
+ * stores, at most the base level.
  */
 export class PyramidGeometry {
   readonly width: number;
@@ -36,8 +39,9 @@ export class PyramidGeometry {
   readonly tileSize: number;
   readonly overlap: number;
   readonly maxLevel: number;
+  readonly minLevel: number;
 
-  constructor(size: ImageSize, tileSize: number, overlap: number) {
+  constructor(size: ImageSize, tileSize: number, overlap: number, minLevel = 0) {
     if (!(size.Width > 0 && size.Height > 0)) {
       throw new Error(`Invalid image size ${size.Width} x ${size.Height}`);
     }
@@ -52,6 +56,10 @@ export class PyramidGeometry {
     this.tileSize = tileSize;
     this.overlap = overlap;
     this.maxLevel = Math.ceil(Math.log2(Math.max(this.width, this.height)));
+    this.minLevel = minLevel;
+    if (!(Number.isInteger(minLevel) && minLevel >= 0 && minLevel <= this.baseLevel)) {
+      throw new Error(`Invalid coarsest level ${minLevel}`);
+    }
   }
 
   /**

@@ -16,6 +16,16 @@ Style for this changelog (keep to it so entries stay uniform):
 Change log for zoomdata
 =======================
 
+v0.2.0 (not yet released)
+-------------------------
+
+- ENH: Reads pyramids stored in a single zipped OME-Zarr file with HTTP range requests, so a
+  presigned URL covers the whole pyramid instead of one URL per tile
+- ENH: A URL ending in `.ozx` is opened as a zipped OME-Zarr pyramid; expiring URLs are replaced
+  when storage rejects them
+- BUILD: Depends on zarrita to read Zarr pyramids; runtime dependencies are not bundled into the
+  library
+
 v0.1.0 (15Nov26)
 ----------------
 

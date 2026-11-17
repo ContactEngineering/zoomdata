@@ -1,6 +1,6 @@
 # zoomdata
 
-TypeScript library for zoomable visualization of two-dimensional scientific data maps, similar to deep zoom image formats but designed for NetCDF data.
+TypeScript library for zoomable visualization of two-dimensional scientific data maps, similar to deep zoom image formats but showing the data values. Pyramids are a single zipped OME-Zarr file, read with HTTP range requests, or a directory of NetCDF tiles.
 
 ## Installation
 
@@ -21,9 +21,28 @@ const viewer = new ZoomData({
 await viewer.start('canvasId');
 ```
 
-`rootUrl` is a shortcut for `source: new StaticTileSource(rootUrl)`. To serve
-tiles from elsewhere, e.g. with a presigned URL per tile, implement the
-`TileSource` interface:
+`rootUrl` is the URL of a zipped OME-Zarr pyramid if it ends in `.ozx`
+(`source: new ZarrSource(rootUrl)`), and else the root URL of a NetCDF
+pyramid (`source: new StaticTileSource(rootUrl)`).
+
+A Zarr pyramid is one file, so a presigned URL covers all of it. If the URL
+can expire, pass a source of URLs; `invalidate` is called when storage
+rejects the URL, and the next `url` call should return a fresh one:
+
+```typescript
+const source = new ZarrSource({
+  url: () => api.signedPyramidUrl(), // cache the URL until invalidated
+  invalidate: () => api.forgetSignedPyramidUrl(),
+});
+const viewer = new ZoomData({ source });
+```
+
+The server must answer range requests. For cross-origin requests, it must
+allow the request headers `Range` and `If-Match` and expose the response
+headers `Content-Range` and `ETag` (on S3, in the bucket's CORS rules).
+
+To serve NetCDF tiles from elsewhere, e.g. with a presigned URL per tile,
+implement the `TileSource` interface:
 
 ```typescript
 const source: TileSource = {
@@ -52,11 +71,11 @@ npm install
 ### Running the Demo
 
 The demo is a [Vue](https://vuejs.org/) application in `demo/`. Its data is
-not part of the repository; create it once with SurfaceTopography (v1.28.0
-or later):
+not part of the repository; create it once with SurfaceTopography (after
+v1.28.0, with its `zarr` extra):
 
 ```bash
-pip install SurfaceTopography
+pip install SurfaceTopography[zarr]
 npm run demo:data          # python demo/make_demo_data.py
 npm run dev
 ```
@@ -113,7 +132,12 @@ The built library will be in `dist/`.
 
 ## Data Format
 
-The library expects a Deep Zoom Image (DZI) style directory structure:
+The preferred format is a single zipped OME-Zarr file (`.ozx`), as written
+by SurfaceTopography's `to_zarr_pyramid`: a Zarr v3 array per level,
+chunked into tiles and grouped into shards, in a ZIP archive. It is read
+with [zarrita](https://github.com/manzt/zarrita.js).
+
+The library also reads a Deep Zoom Image (DZI) style directory of NetCDF tiles:
 
 ```
 data/
@@ -129,9 +153,9 @@ data/
     ...
 ```
 
-The descriptor fields, the level and tile geometry and the NetCDF tile
-layout (format versions 1 and 2) are specified in
-[docs/pyramid-format.md](docs/pyramid-format.md).
+The level and tile geometry, the zipped OME-Zarr layout, and the
+descriptor fields and tile layout of NetCDF pyramids (format versions 1
+and 2) are specified in [docs/pyramid-format.md](docs/pyramid-format.md).
 
 ## Generating Example Data
 
@@ -143,7 +167,10 @@ from SurfaceTopography.Generation import fourier_synthesis
 # Generate synthetic surface
 t = fourier_synthesis((1024, 1024), (1.0, 1.0), 0.8, rms_slope=0.1, unit='mm')
 
-# Export as DZI with NetCDF tiles
+# Export as a zipped OME-Zarr pyramid (needs SurfaceTopography[zarr])
+t.to_zarr_pyramid('output_dir/pyramid.ozx')
+
+# Or as DZI with NetCDF tiles
 t.to_dzi('dzdata', 'output_dir', format='nc', meta_format='json', nc_version=2)
 ```
 
@@ -159,19 +186,19 @@ const viewer = new ZoomData(options: ZoomDataOptions);
 
 #### Options
 
-| Option                 | Type                 | Default                 | Description                                         |
-| ---------------------- | -------------------- | ----------------------- | --------------------------------------------------- |
-| `source`               | `TileSource`         | –                       | Where descriptor and tiles come from                |
-| `rootUrl`              | `string`             | –                       | Shortcut for a `StaticTileSource`                   |
-| `colorPalette`         | `number[]`           | `Palettes.inferno(256)` | Color palette array                                 |
-| `minValue`             | `number`             | data minimum            | Value of the first palette entry, in physical units |
-| `maxValue`             | `number`             | data maximum            | Value of the last palette entry, in physical units  |
-| `noDataColor`          | `number`             | transparent             | Colour of undefined points (ABGR)                   |
-| `backgroundColor`      | `number`             | light grey              | Colour behind the image (ABGR)                      |
-| `relief`               | `boolean` or options | off                     | Relief shading, see below                           |
-| `verticalExaggeration` | `number`             | `1`                     | Height scale of the surface in the tilted view      |
-| `antialias`            | `boolean`            | `true`                  | Smooth the turned or tilted view                    |
-| `zoomLevelIncrement`   | `number`             | `0.1`                   | Zoom change per scroll                              |
+| Option                 | Type                            | Default                 | Description                                                |
+| ---------------------- | ------------------------------- | ----------------------- | ---------------------------------------------------------- |
+| `source`               | `PyramidReader` or `TileSource` | –                       | Where descriptor and tiles come from, e.g. a `ZarrSource`  |
+| `rootUrl`              | `string`                        | –                       | Shortcut for a `ZarrSource` (`.ozx`) or `StaticTileSource` |
+| `colorPalette`         | `number[]`                      | `Palettes.inferno(256)` | Color palette array                                        |
+| `minValue`             | `number`                        | data minimum            | Value of the first palette entry, in physical units        |
+| `maxValue`             | `number`                        | data maximum            | Value of the last palette entry, in physical units         |
+| `noDataColor`          | `number`                        | transparent             | Colour of undefined points (ABGR)                          |
+| `backgroundColor`      | `number`                        | light grey              | Colour behind the image (ABGR)                             |
+| `relief`               | `boolean` or options            | off                     | Relief shading, see below                                  |
+| `verticalExaggeration` | `number`                        | `1`                     | Height scale of the surface in the tilted view             |
+| `antialias`            | `boolean`                       | `true`                  | Smooth the turned or tilted view                           |
+| `zoomLevelIncrement`   | `number`                        | `0.1`                   | Zoom change per scroll                                     |
 
 #### Methods
 

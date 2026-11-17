@@ -2,7 +2,8 @@ import { DefaultController } from './DefaultController.js';
 import { CrossSections } from './CrossSections.js';
 import type { ReliefOptions } from './relief.js';
 import type { Sample } from './sampling.js';
-import { toTileSource, type TileSource } from './TileSource.js';
+import type { PyramidReader } from './PyramidReader.js';
+import { toPyramidReader } from './sources.js';
 import type { ZoomDataOptions } from './types.js';
 import type { ZoomConfiguration } from './ZoomConfiguration.js';
 import { ZoomEngine, type View } from './ZoomEngine.js';
@@ -16,7 +17,7 @@ import { ZoomEngine, type View } from './ZoomEngine.js';
  * the image at one image pixel per CSS pixel.
  */
 export class ZoomData {
-  private readonly source: TileSource;
+  private readonly source: PyramidReader;
   private readonly options: ZoomDataOptions;
 
   private engine: ZoomEngine | null = null;
@@ -39,7 +40,7 @@ export class ZoomData {
     if (source === undefined) {
       throw new Error('ZoomData: either source or rootUrl is required');
     }
-    this.source = toTileSource(source);
+    this.source = toPyramidReader(source);
     this.options = options;
   }
 

@@ -1,9 +1,10 @@
 """
 Generate the tile pyramids used by the render and decoder tests.
 
-The pyramids are written by SurfaceTopography's `write_dzi`. Next to each
-pyramid, `reference/` holds the expected data of every level, computed here
-independently of the writer:
+The pyramids are written by SurfaceTopography's `write_dzi`, as NetCDF
+tiles, and by its `write_zarr_pyramid`, as a zipped OME-Zarr `pyramid.ozx`.
+Next to each pyramid, `reference/` holds the expected data of every level,
+computed here independently of the writers:
 
 - `reference/levels.json` lists, per level, its shape and the byte offset of
   its data in `reference/levels.f64`;
@@ -14,13 +15,14 @@ A level with stride s = 2**(max_level - level) holds at pixel (i, j) the mean
 of the defined points of the image block [i*s, (i+1)*s) x [j*s, (j+1)*s)
 (truncated at the image boundary), or NaN if the block has none.
 
-The script also checks every tile against the reference, so it doubles as a
-test of the writer. Rerun it after changing the fixtures:
+The script also checks every tile and every Zarr level against the
+reference, so it doubles as a test of the writers. Rerun it after changing
+the fixtures:
 
     python test/fixtures/generate.py
 
-It needs SurfaceTopography with `write_dzi(..., downsample=...)` and NetCDF
-format version 2 (main after v1.28.0).
+It needs SurfaceTopography with `write_zarr_pyramid` (after v1.28.0) and
+zarr.
 """
 
 import json
@@ -30,9 +32,11 @@ import shutil
 import sys
 
 import numpy as np
+import zarr
 from scipy.io import netcdf_file
 from SurfaceTopography import __version__ as st_version
 from SurfaceTopography.IO.DZI import write_dzi
+from SurfaceTopography.IO.ZarrPyramid import write_zarr_pyramid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -119,6 +123,23 @@ def check_tiles(root, descriptor, max_level, levels):
                 assert np.array_equal(np.isnan(h), np.isnan(expected)), fn
 
 
+def check_zarr(fn, max_level, levels):
+    """Every level of the Zarr pyramid must be its reference level"""
+    with zarr.storage.ZipStore(fn, mode="r") as store:
+        root = zarr.open_group(store, mode="r")
+        datasets = root.attrs["ome"]["multiscales"][0]["datasets"]
+        for k, dataset in enumerate(datasets):
+            array = root[dataset["path"]]
+            h = array.attrs["add_offset"] + array.attrs["scale_factor"] * array[...].astype(float)
+            expected = levels[max_level - k].T
+            assert h.shape == expected.shape, (fn, k, h.shape, expected.shape)
+            span = np.nanmax(expected) - np.nanmin(expected)
+            np.testing.assert_allclose(h, expected, rtol=0, atol=1e-6 * max(span, 1))
+            assert np.array_equal(np.isnan(h), np.isnan(expected)), (fn, k)
+        # The coarsest level is a single chunk
+        assert max(array.shape) <= array.chunks[0], fn
+
+
 def generate(name, shape, tile_size, overlap, nc_version, offset=0.0, mask=None, flat=False):
     nx, ny = shape
     heights = np.full(shape, 0.25) if flat else pattern(nx, ny) + offset
@@ -147,6 +168,19 @@ def generate(name, shape, tile_size, overlap, nc_version, offset=0.0, mask=None,
     max_level, levels = reference_levels(np.ma.filled(np.ma.asarray(heights, float), np.nan))
     check_tiles(root, descriptor, max_level, levels)
 
+    # The same data as a zipped OME-Zarr; tiles get their overlap when read
+    zarr_fn = os.path.join(root, "pyramid.ozx")
+    write_zarr_pyramid(
+        heights,
+        zarr_fn,
+        physical_sizes=(nx * 0.5, ny * 0.5),
+        unit="um",
+        tile_size=tile_size,
+        shard_tiles=2,
+        colorbar_title="Height (µm)",
+    )
+    check_zarr(zarr_fn, max_level, levels)
+
     ref_root = os.path.join(root, "reference")
     os.makedirs(ref_root)
     index = {"maxLevel": max_level, "levels": {}}
@@ -164,6 +198,25 @@ def generate(name, shape, tile_size, overlap, nc_version, offset=0.0, mask=None,
             offset_bytes += a.nbytes
     with open(os.path.join(ref_root, "levels.json"), "w") as f:
         json.dump(index, f, indent=1)
+
+
+def generate_zarr_noise():
+    """
+    Zarr pyramid of noise, larger than the 64 KiB that unzipit reads from the
+    end of the file, for tests of the range requests of the Zarr reader
+    """
+    root = os.path.join(HERE, "noise-zarr")
+    shutil.rmtree(root, ignore_errors=True)
+    os.makedirs(root)
+    nx, ny = 200, 160
+    heights = np.random.default_rng(42).standard_normal((nx, ny))
+    fn = os.path.join(root, "pyramid.ozx")
+    write_zarr_pyramid(
+        heights, fn, physical_sizes=(nx * 0.5, ny * 0.5), unit="um", tile_size=32, shard_tiles=2
+    )
+    max_level, levels = reference_levels(heights)
+    check_zarr(fn, max_level, levels)
+    assert os.path.getsize(fn) > 2 * 65536, os.path.getsize(fn)
 
 
 def generate_decoder_fixtures():
@@ -209,5 +262,6 @@ if __name__ == "__main__":
         generate(name, **FIXTURES[name])
         print(f"{name}: ok")
     generate_decoder_fixtures()
+    generate_zarr_noise()
     with open(os.path.join(HERE, "GENERATOR"), "w") as f:
         f.write(f"SurfaceTopography {st_version}\n")

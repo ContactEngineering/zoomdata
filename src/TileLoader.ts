@@ -1,4 +1,8 @@
+import { HttpError, isAbort, isTransient, sleep } from './http.js';
+import { NetCDFReader } from './NetCDFReader.js';
+import { isPyramidReader, type PyramidReader } from './PyramidReader.js';
 import type { Tile } from './Tile.js';
+import type { DecodedTile } from './TileDecoder.js';
 import type { TileSource } from './TileSource.js';
 import { TileState } from './types.js';
 
@@ -21,58 +25,24 @@ export interface TileLoaderOptions {
   retryDelay?: number;
 }
 
-export class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    statusText: string,
-  ) {
-    super(`HTTP ${status}: ${statusText}`);
-    this.name = 'HttpError';
-  }
-}
-
 interface Job {
   request: TileRequest;
   controller: AbortController | null;
 }
 
-function isAbort(err: unknown): boolean {
-  return err instanceof DOMException && err.name === 'AbortError';
-}
-
-function isTransient(err: unknown): boolean {
-  if (err instanceof HttpError) return err.status === 429 || err.status >= 500;
-  // fetch rejects with a TypeError on network failure
-  return err instanceof TypeError;
-}
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new DOMException('Aborted', 'AbortError'));
-    };
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
 /**
- * Loads tiles through a TileSource with a priority queue.
+ * Loads tiles through a PyramidReader with a priority queue.
  *
  * Each frame, the viewer passes the complete set of tiles it wants to
  * update(). Tiles no longer wanted are dropped from the queue, and their
  * requests are aborted if in flight. The rest load in priority order with
  * bounded concurrency. Network errors and HTTP 429/5xx are retried with
- * exponential backoff; on HTTP 403 the source is asked to invalidate the
+ * exponential backoff; on HTTP 403 the reader is asked to invalidate the
  * tile's URL and the tile is retried once with a fresh URL, to recover from
  * expired URLs.
  */
 export class TileLoader {
-  private readonly source: TileSource;
+  private readonly reader: PyramidReader;
   private readonly concurrency: number;
   private readonly retries: number;
   private readonly retryDelay: number;
@@ -83,8 +53,12 @@ export class TileLoader {
   /** Called when a tile finished loading (error is null) or failed */
   onSettled: ((request: TileRequest, error: Error | null) => void) | null = null;
 
-  constructor(source: TileSource, options: TileLoaderOptions = {}) {
-    this.source = source;
+  /**
+   * @param source - Reader of the pyramid, or a TileSource of NetCDF tiles
+   * @param options - Concurrency and retries
+   */
+  constructor(source: PyramidReader | TileSource, options: TileLoaderOptions = {}) {
+    this.reader = isPyramidReader(source) ? source : new NetCDFReader(source);
     this.concurrency = options.concurrency ?? 6;
     this.retries = options.retries ?? 2;
     this.retryDelay = options.retryDelay ?? 250;
@@ -146,8 +120,7 @@ export class TileLoader {
     const signal = job.controller!.signal;
     request.tile.setState(TileState.Loading);
     try {
-      const buffer = await this.fetchWithRetry(request, signal);
-      request.tile.load(buffer);
+      request.tile.setDecoded(await this.readWithRetry(request, signal));
       this.finish(job, null);
     } catch (err) {
       if (isAbort(err) || signal.aborted) {
@@ -168,27 +141,22 @@ export class TileLoader {
     this.pump();
   }
 
-  private async fetchWithRetry(request: TileRequest, signal: AbortSignal): Promise<ArrayBuffer> {
+  private async readWithRetry(request: TileRequest, signal: AbortSignal): Promise<DecodedTile> {
     const { level, col, row } = request;
     let refreshed = false;
     for (let attempt = 0; ; attempt++) {
       try {
-        const url = await this.source.tileUrl(level, col, row);
-        if (url === null) throw new Error('Tile not available');
-        signal.throwIfAborted();
-        const response = await fetch(url, { signal });
-        if (!response.ok) throw new HttpError(response.status, response.statusText);
-        return await response.arrayBuffer();
+        return await this.reader.readTile(level, col, row, signal);
       } catch (err) {
         if (isAbort(err) || signal.aborted) throw err;
         if (
           err instanceof HttpError &&
           err.status === 403 &&
           !refreshed &&
-          this.source.invalidate
+          this.reader.invalidate
         ) {
           // The URL may have expired; get a fresh one and try once more
-          this.source.invalidate(level, col, row);
+          this.reader.invalidate(level, col, row);
           refreshed = true;
           attempt--;
           continue;
