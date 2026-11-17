@@ -3,6 +3,7 @@
  */
 import type { TileLoaderOptions } from './TileLoader.js';
 import type { ReliefOptions } from './relief.js';
+import type { PyramidReader } from './PyramidReader.js';
 import type { TileSource } from './TileSource.js';
 
 /** Size dimensions for images */
@@ -46,9 +47,15 @@ export interface DZIMetadata {
 
 /** Options for initializing ZoomData */
 export interface ZoomDataOptions {
-  /** Where the descriptor and tiles come from; takes precedence over rootUrl */
-  source?: TileSource;
-  /** Root URL where dzdata.json and dzdata_files/ are located */
+  /**
+   * Where the descriptor and tiles come from, e.g. a ZarrSource for a URL
+   * that expires; takes precedence over rootUrl
+   */
+  source?: PyramidReader | TileSource;
+  /**
+   * URL of a zipped OME-Zarr pyramid (ending in `.ozx`), or root URL where
+   * dzdata.json and dzdata_files/ of a NetCDF pyramid are located
+   */
   rootUrl?: string;
   /** Zoom level change per wheel notch (default: 0.25) */
   zoomLevelIncrement?: number;

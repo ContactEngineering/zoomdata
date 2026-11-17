@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { NetCDFReader } from './NetCDFReader.js';
 import { StaticTileSource, type TileSource } from './TileSource.js';
+import { ZarrSource } from './ZarrSource.js';
 import { ZoomConfiguration } from './ZoomConfiguration.js';
 import type { DZIMetadata } from './types.js';
 
@@ -41,8 +43,15 @@ describe('ZoomConfiguration', () => {
   describe('constructor', () => {
     it('wraps a root URL in a StaticTileSource', () => {
       const config = new ZoomConfiguration('http://example.com/data');
-      expect(config.source).toBeInstanceOf(StaticTileSource);
-      expect((config.source as StaticTileSource).rootUrl).toBe('http://example.com/data/');
+      expect(config.reader).toBeInstanceOf(NetCDFReader);
+      const source = (config.reader as NetCDFReader).source;
+      expect(source).toBeInstanceOf(StaticTileSource);
+      expect((source as StaticTileSource).rootUrl).toBe('http://example.com/data/');
+    });
+
+    it('reads a URL ending in .ozx as a zipped OME-Zarr pyramid', () => {
+      const config = new ZoomConfiguration('http://example.com/data/pyramid.ozx?sig=1');
+      expect(config.reader).toBeInstanceOf(ZarrSource);
     });
 
     it('uses a given tile source', async () => {
@@ -52,7 +61,7 @@ describe('ZoomConfiguration', () => {
       };
       const config = new ZoomConfiguration(source);
       await config.fetch();
-      expect(config.source).toBe(source);
+      expect((config.reader as NetCDFReader).source).toBe(source);
       expect(config.imageSize).toEqual({ Width: 4096, Height: 2048 });
     });
 

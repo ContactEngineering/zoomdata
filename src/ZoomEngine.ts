@@ -1,6 +1,7 @@
 import { footprint, isPlain, MAX_TILT, orbit, project, unproject, type Camera } from './camera.js';
 import { Palettes } from './palettes.js';
 import type { TileAddress } from './PyramidGeometry.js';
+import type { PyramidReader } from './PyramidReader.js';
 import { resolveRelief, type ReliefOptions } from './relief.js';
 import type { Sample } from './sampling.js';
 import { TiledImage } from './TiledImage.js';
@@ -46,8 +47,12 @@ export interface ZoomEngineEvents {
 }
 
 export interface ZoomEngineOptions {
-  /** Where the descriptor and tiles come from, or the root URL of a static pyramid */
-  source: TileSource | string;
+  /**
+   * Pyramid: a reader (e.g. a ZarrSource), a TileSource of NetCDF tiles, or
+   * a URL, of a zipped OME-Zarr file (`.ozx`) or of the root directory of a
+   * static NetCDF pyramid
+   */
+  source: PyramidReader | TileSource | string;
   /** Color palette (array of 32-bit ABGR integers) */
   colorPalette?: number[];
   /** Value mapped to the first palette entry, in physical units (default: data minimum) */

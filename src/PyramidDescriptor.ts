@@ -7,7 +7,12 @@ type FormatVersion = (typeof SUPPORTED_FORMAT_VERSIONS)[number];
 
 /** Validated pyramid descriptor, see docs/pyramid-format.md */
 export interface PyramidDescriptor {
-  formatVersion: FormatVersion;
+  /** How tiles are stored: NetCDF files or a zipped OME-Zarr */
+  format: 'nc' | 'zarr';
+  /** Version of the NetCDF tile format, or of the zoomdata attributes of a Zarr pyramid */
+  formatVersion: number;
+  /** Coarsest level that is stored; levels below it are not drawn */
+  minLevel: number;
   size: ImageSize;
   tileSize: number;
   overlap: number;
@@ -72,7 +77,9 @@ export function parseDescriptor(data: DZIMetadata): PyramidDescriptor {
   }
 
   return {
+    format: 'nc',
     formatVersion: formatVersion as FormatVersion,
+    minLevel: 0,
     size: image.Size,
     tileSize: image.TileSize,
     overlap,

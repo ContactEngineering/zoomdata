@@ -6,6 +6,7 @@
 import type { ReliefOptions } from '../../src/relief';
 import type { Sample } from '../../src/sampling';
 import { StaticTileSource, type TileSource } from '../../src/TileSource';
+import type { PyramidReader } from '../../src/PyramidReader';
 import { ZoomEngine } from '../../src/ZoomEngine';
 import type { RGB, Reference, View } from './harness';
 import { fixtureUrl, testPalette } from './harness';
@@ -81,7 +82,7 @@ export interface DriverOptions {
   relief?: ReliefOptions | boolean;
   verticalExaggeration?: number;
   antialias?: boolean;
-  source?: TileSource;
+  source?: PyramidReader | TileSource;
   cacheBytes?: number;
 }
 

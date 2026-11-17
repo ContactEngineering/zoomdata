@@ -1,6 +1,8 @@
-import { parseDescriptor, type PyramidDescriptor } from './PyramidDescriptor.js';
+import type { PyramidDescriptor } from './PyramidDescriptor.js';
 import { PyramidGeometry } from './PyramidGeometry.js';
-import { toTileSource, type TileSource } from './TileSource.js';
+import { toPyramidReader } from './sources.js';
+import type { PyramidReader } from './PyramidReader.js';
+import type { TileSource } from './TileSource.js';
 import type { ColorbarRange, ImageSize } from './types.js';
 
 /**
@@ -9,7 +11,7 @@ import type { ColorbarRange, ImageSize } from './types.js';
  * zoom levels.
  */
 export class ZoomConfiguration {
-  readonly source: TileSource;
+  readonly reader: PyramidReader;
 
   private _descriptor: PyramidDescriptor | null = null;
   private _geometry: PyramidGeometry | null = null;
@@ -24,10 +26,11 @@ export class ZoomConfiguration {
 
   /**
    * Create a new ZoomConfiguration
-   * @param source - Tile source, or root URL of a static pyramid
+   * @param source - Pyramid reader, tile source, or URL of a static
+   *   pyramid (see `toPyramidReader`)
    */
-  constructor(source: TileSource | string) {
-    this.source = toTileSource(source);
+  constructor(source: PyramidReader | TileSource | string) {
+    this.reader = toPyramidReader(source);
   }
 
   /**
@@ -119,9 +122,7 @@ export class ZoomConfiguration {
    */
   async fetch(): Promise<this> {
     try {
-      const data = await this.source.descriptor();
-
-      const descriptor = parseDescriptor(data);
+      const descriptor = await this.reader.descriptor();
       this._descriptor = descriptor;
       this._imageSize = descriptor.size;
       this._tileSize = descriptor.tileSize;
@@ -130,7 +131,12 @@ export class ZoomConfiguration {
       this._colorbarTitle = descriptor.colorbarTitle;
       this._pixelsPerMeter = descriptor.pixelsPerMeter;
 
-      this._geometry = new PyramidGeometry(this._imageSize, this._tileSize, this._overlap);
+      this._geometry = new PyramidGeometry(
+        this._imageSize,
+        this._tileSize,
+        this._overlap,
+        descriptor.minLevel,
+      );
       this._maxZoomLevel = this._geometry.maxLevel;
 
       this._loaded = true;

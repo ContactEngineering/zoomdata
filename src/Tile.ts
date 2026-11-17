@@ -1,4 +1,9 @@
-import { decodeTile, type ValueEncoding } from './TileDecoder.js';
+import {
+  decodeTile,
+  TileDecodeError,
+  type DecodedTile,
+  type ValueEncoding,
+} from './TileDecoder.js';
 import { TileState } from './types.js';
 
 export interface TileOptions {
@@ -69,19 +74,36 @@ export class Tile {
    * throws if they are invalid
    */
   load(buffer: ArrayBuffer): void {
+    let decoded: DecodedTile;
     try {
-      const decoded = decodeTile(buffer, this.options.expectedShape);
-      this.width = decoded.width;
-      this.height = decoded.height;
-      this.data = decoded.values;
-      this.encoding = decoded.encoding ?? this.options.encoding ?? { scaleFactor: 1, addOffset: 0 };
-      this.unit = decoded.unit;
-      this.state = TileState.Ready;
-      this.error = null;
+      decoded = decodeTile(buffer, this.options.expectedShape);
     } catch (err) {
       this.fail(err instanceof Error ? err : new Error(String(err)));
       throw err;
     }
+    this.setDecoded(decoded);
+  }
+
+  /**
+   * Take the values of a decoded tile; marks the tile as failed and throws
+   * if their shape is not the expected one
+   */
+  setDecoded(decoded: DecodedTile): void {
+    const expected = this.options.expectedShape;
+    if (expected && (expected.width !== decoded.width || expected.height !== decoded.height)) {
+      const err = new TileDecodeError(
+        `shape ${decoded.width} x ${decoded.height}, expected ${expected.width} x ${expected.height}`,
+      );
+      this.fail(err);
+      throw err;
+    }
+    this.width = decoded.width;
+    this.height = decoded.height;
+    this.data = decoded.values;
+    this.encoding = decoded.encoding ?? this.options.encoding ?? { scaleFactor: 1, addOffset: 0 };
+    this.unit = decoded.unit;
+    this.state = TileState.Ready;
+    this.error = null;
   }
 
   /**

@@ -59,7 +59,7 @@ export class TiledImage {
       this.deleteTexture(key);
       tile.clearCache();
     };
-    this.loader = new TileLoader(config.source, loaderOptions);
+    this.loader = new TileLoader(config.reader, loaderOptions);
     this.loader.onSettled = (request) => {
       this.tileUnit ??= request.tile.unit;
       this.tileCache.updateSize(request.key);
@@ -159,8 +159,8 @@ export class TiledImage {
    * image pixel)
    */
   levelForScale(k: number): number {
-    const max = this.config.maxZoomLevel;
-    return Math.max(0, Math.min(max, Math.round(max + Math.log2(k))));
+    const { minLevel, maxLevel } = this.config.geometry;
+    return Math.max(minLevel, Math.min(maxLevel, Math.round(maxLevel + Math.log2(k))));
   }
 
   private deleteTexture(key: string): void {

@@ -4,6 +4,7 @@ import { DEFAULT_RELIEF } from '../../src/relief';
 import { supportsWebGL2 } from '../../src/WebGLRenderer';
 import { ZoomEngine } from '../../src/ZoomEngine';
 import { StaticTileSource, type TileSource } from '../../src/TileSource';
+import { ZarrSource } from '../../src/ZarrSource';
 import { BACKGROUND, NO_DATA, createDriver, type Driver, type DriverOptions } from './driver';
 import {
   compare,
@@ -741,5 +742,68 @@ describe('undefined points and format version 2', () => {
     const { ref, driver } = await setup('flat-v2', { colorRange: [0, 1] });
     const view = { k: 2, tx: 7, ty: 5 };
     await check('flat-v2', ref, await driver.render(view), view, { colorRange: [0, 1] });
+  });
+});
+
+// The same pyramids as zipped OME-Zarr files, read with range requests: the
+// tiles, assembled from chunks with the overlap of the NetCDF pyramid, must
+// draw the same pictures
+describe('zipped OME-Zarr pyramid', () => {
+  async function setupZarr(name: string, options: Omit<DriverOptions, 'width' | 'height'> = {}) {
+    const ref = await loadReference(name);
+    const source = new ZarrSource(`${fixtureUrl(name)}pyramid.ozx`, { overlap: ref.overlap });
+    driver = await createDriver(ref, { width: WIDTH, height: HEIGHT, source, ...options });
+    return { ref, driver };
+  }
+
+  for (const fixture of ['pattern-ov1', 'pattern-ov0', 'pattern-ov2', 'nan-v2']) {
+    describe(fixture, () => {
+      for (const [name, view] of Object.entries(VIEWS)) {
+        it(name, async () => {
+          const { ref, driver } = await setupZarr(fixture);
+          await check(`zarr ${fixture} ${name}`, ref, await driver.render(view), view);
+        });
+      }
+    });
+  }
+
+  it('is read from a URL ending in .ozx', async () => {
+    const ref = await loadReference('pattern-ov1');
+    const engine = await ZoomEngine.create(document.createElement('canvas'), {
+      source: `${fixtureUrl('pattern-ov1')}pyramid.ozx`,
+    });
+    expect(engine.config.descriptor.format).toBe('zarr');
+    expect(engine.config.descriptor.size).toEqual({
+      Width: ref.imageWidth,
+      Height: ref.imageHeight,
+    });
+    engine.dispose();
+  });
+
+  it('draws the coarsest stored level when zoomed out further', async () => {
+    const { driver } = await setupZarr('pattern-ov1');
+    // Level 4 would match k = 1/16, but levels below 5 are not stored. The
+    // map is too small on screen to compare pixels with the reference.
+    const pixels = await driver.render({ k: 1 / 16, tx: 30, ty: 20 });
+    expect(driver.engine.level).toBe(5);
+    let map = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const [r, g, b] = pixels.subarray(i, i + 3);
+      if (r !== BACKGROUND[0] || g !== BACKGROUND[1] || b !== BACKGROUND[2]) map++;
+    }
+    // About 150 / 16 x 100 / 16 pixels
+    expect(map).toBeGreaterThan(40);
+  });
+
+  describe('relief across tile borders', () => {
+    for (const fixture of ['pattern-ov1', 'pattern-ov2']) {
+      it(fixture, async () => {
+        const { ref, driver } = await setupZarr(fixture, { relief: true });
+        const view = { k: 4, tx: -100.2, ty: -90.6 };
+        await check(`zarr relief ${fixture}`, ref, await driver.render(view), view, {
+          relief: DEFAULT_RELIEF,
+        });
+      });
+    }
   });
 });
